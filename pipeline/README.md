@@ -16,6 +16,17 @@ npm install
 npm run check
 ```
 
+## Get data
+
+You can get data from the NOAA S-57 exchange set archive at [https://charts.noaa.gov/ENCs/ENCs.shtml](https://charts.noaa.gov/ENCs/ENCs.shtml)
+
+Example:
+
+```sh
+cd data/source/
+curl -O https://charts.noaa.gov/ENCs/WI_ENCs.zip
+```
+
 ## Inspect an exchange set
 
 The inventory command accepts either an extracted exchange-set directory or a
