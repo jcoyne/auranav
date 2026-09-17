@@ -1,6 +1,13 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractionCommand, layerSummaryCommand, metadataCommand, parseMetadata, tileCommand } from "../src/s57.js";
+import {
+  datasetSummaryCommand,
+  extractionCommand,
+  metadataCommand,
+  parseLayerSummaries,
+  parseMetadata,
+  tileCommand,
+} from "../src/s57.js";
 
 const baseCell = path.resolve("fixtures/US4WI1DP.000");
 const properties = {
@@ -42,10 +49,21 @@ describe("S-57 commands", () => {
       executable: "ogrinfo",
       args: ["-ro", "-json", "-features", "-oo", "UPDATES=APPLY", baseCell, "DSID"],
     });
-    expect(layerSummaryCommand(baseCell, "SOUNDG").args).toEqual([
+    expect(datasetSummaryCommand(baseCell).args).toEqual([
       "-ro", "-json", "-summary", "-oo", "UPDATES=APPLY", "-oo", "SPLIT_MULTIPOINT=ON", "-oo",
-      "ADD_SOUNDG_DEPTH=ON", baseCell, "SOUNDG",
+      "ADD_SOUNDG_DEPTH=ON", baseCell,
     ]);
+  });
+
+  it("discovers the supported layers present in a dataset summary", () => {
+    const parsed = parseLayerSummaries(JSON.stringify({
+      driverShortName: "S57",
+      layers: [
+        { name: "M_COVR", featureCount: 1, geometryFields: [{ extent: [-88, 42, -87, 43] }] },
+        { name: "DEPARE", featureCount: 2, geometryFields: [{ extent: [-88, 42, -87, 43] }] },
+      ],
+    }));
+    expect([...parsed.keys()]).toEqual(["M_COVR", "DEPARE"]);
   });
 
   it("constructs extraction SQL with stable layer properties", () => {
@@ -88,13 +106,14 @@ describe("parseMetadata", () => {
         soundingDatum: "International Great Lakes Datum 1985",
       },
       bounds: [-87.9, 42.9, -87.6, 43.2],
+      layers: ["COALNE", "DEPARE", "DEPCNT", "SOUNDG"],
     });
   });
 
-  it("rejects absent or empty required layers", () => {
+  it("allows absent supported layers but rejects a present empty layer", () => {
     const missing = summaries();
     missing.delete("DEPCNT");
-    expect(() => parseMetadata(metadata(), missing)).toThrow("Required DEPCNT layer summary is absent");
+    expect(parseMetadata(metadata(), missing).layers).toEqual(["COALNE", "DEPARE", "SOUNDG"]);
     expect(() => parseMetadata(metadata(), summaries({ SOUNDG: summary("SOUNDG", 0, [-87, 43, -86, 44]) }))).toThrow(
       "Required S-57 layer SOUNDG contains no features",
     );

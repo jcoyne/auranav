@@ -64,14 +64,15 @@ npm run cli -- convert-cell \
 ```
 
 The command applies updates through GDAL, splits multipoint `SOUNDG` features,
-adds each sounding's `DEPTH`, and stages renamed `COALNE`, `DEPARE`, `DEPCNT`,
-and `SOUNDG` layers in a temporary GeoPackage. GDAL's native PMTiles driver
-creates the archive. The final directory also contains a schema-v1
+adds each sounding's `DEPTH`, and stages whichever of `COALNE`, `DEPARE`,
+`DEPCNT`, and `SOUNDG` are present under stable names in a temporary GeoPackage.
+Individual ENC cells are not required to contain every supported feature class.
+GDAL's native PMTiles driver creates the archive. The final directory also contains a schema-v1
 `manifest.json` and `USER_AGREEMENT.txt`.
 
 Conversion refuses incomplete update sequences, an applied DSID update number
-that differs from the highest update file, absent or empty required layers or
-`M_COVR` coverage, absent DSID/DSPM metadata, non-metre source depths, an
+that differs from the highest update file, empty or malformed present layers,
+missing `M_COVR` coverage, a cell with no supported chart layers, absent DSID/DSPM metadata, non-metre source depths, an
 invalid generated PMTiles layer set, and an existing output directory. Output
 is published only after all checks pass. Coverage bounds come from `M_COVR`.
 The manifest preserves edition, update number and dates, compilation scale,

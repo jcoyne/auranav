@@ -62,6 +62,7 @@ interface OgrInfoDocument {
 interface MetadataResult {
   readonly cell: CellMetadata;
   readonly bounds: Bounds;
+  readonly layers: readonly RequiredLayer[];
 }
 
 interface ExtractSpec {
@@ -84,7 +85,7 @@ export function metadataCommand(baseCell: string, ogrinfo = "ogrinfo"): Command 
   };
 }
 
-export function layerSummaryCommand(baseCell: string, layer: InspectedLayer, ogrinfo = "ogrinfo"): Command {
+export function datasetSummaryCommand(baseCell: string, ogrinfo = "ogrinfo"): Command {
   return {
     executable: ogrinfo,
     args: [
@@ -98,9 +99,19 @@ export function layerSummaryCommand(baseCell: string, layer: InspectedLayer, ogr
       "-oo",
       "ADD_SOUNDG_DEPTH=ON",
       path.resolve(baseCell),
-      layer,
     ],
   };
+}
+
+export function parseLayerSummaries(summaryJson: string): ReadonlyMap<InspectedLayer, string> {
+  const document = parseOgrDocument(summaryJson, "dataset summary");
+  if (document.driverShortName !== "S57") throw new Error("Input is not reported as an S-57 dataset");
+  const summaries = new Map<InspectedLayer, string>();
+  for (const name of INSPECTED_LAYERS) {
+    const layer = document.layers?.find((candidate) => candidate.name === name);
+    if (layer !== undefined) summaries.set(name, JSON.stringify({ driverShortName: "S57", layers: [layer] }));
+  }
+  return summaries;
 }
 
 export function extractionCommand(
@@ -195,9 +206,10 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
     throw new Error("Required S-57 layer M_COVR contains no coverage features");
   }
   const bounds = parseBounds(coverageLayer.geometryFields?.[0]?.extent, "M_COVR");
+  const layers: RequiredLayer[] = [];
   for (const requiredLayer of REQUIRED_LAYERS) {
     const rawSummary = summaries.get(requiredLayer);
-    if (rawSummary === undefined) throw new Error(`Required ${requiredLayer} layer summary is absent`);
+    if (rawSummary === undefined) continue;
     const document = parseOgrDocument(rawSummary, `${requiredLayer} summary`);
     const layer = document.layers?.find((candidate) => candidate.name === requiredLayer);
     if (layer === undefined) throw new Error(`Required S-57 layer ${requiredLayer} is absent`);
@@ -205,8 +217,10 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
       throw new Error(`Required S-57 layer ${requiredLayer} contains no features`);
     }
     parseBounds(layer.geometryFields?.[0]?.extent, requiredLayer);
+    layers.push(requiredLayer);
   }
-  return { cell, bounds };
+  if (layers.length === 0) throw new Error("S-57 cell contains none of the supported chart layers");
+  return { cell, bounds, layers };
 }
 
 export async function convertCell(options: ConvertCellOptions, runner: CommandRunner = runCommand): Promise<string> {
@@ -216,12 +230,9 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
   await requireNonemptyFile(options.userAgreement, "user agreement");
 
   const metadataResult = await runner(metadataCommand(baseCell, options.ogrinfo));
-  const summaries = new Map<InspectedLayer, string>();
-  for (const layer of INSPECTED_LAYERS) {
-    const result = await runner(layerSummaryCommand(baseCell, layer, options.ogrinfo));
-    summaries.set(layer, result.stdout);
-  }
-  const { cell, bounds } = parseMetadata(metadataResult.stdout, summaries);
+  const summaryResult = await runner(datasetSummaryCommand(baseCell, options.ogrinfo));
+  const summaries = parseLayerSummaries(summaryResult.stdout);
+  const { cell, bounds, layers } = parseMetadata(metadataResult.stdout, summaries);
   const expectedName = path.basename(baseCell, path.extname(baseCell)).toUpperCase();
   if (cell.name !== expectedName) throw new Error(`DSID cell ${cell.name} does not match input filename ${expectedName}`);
   if (cell.updateNumber !== highestUpdate) {
@@ -243,7 +254,8 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
 
   try {
     const stagingDatabase = path.join(temporary, "layers.gpkg");
-    for (const [index, extract] of EXTRACTS.entries()) {
+    const extracts = EXTRACTS.filter((extract) => layers.includes(extract.source));
+    for (const [index, extract] of extracts.entries()) {
       await runner(extractionCommand(baseCell, stagingDatabase, extract, cell, index === 0, options.ogr2ogr));
     }
     const tileFilename = `${options.packageId}.pmtiles`;
@@ -251,11 +263,11 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
     await runner(tileCommand(tilePath, stagingDatabase, options.minZoom, options.maxZoom, options.ogr2ogr));
     await requireNonemptyFile(tilePath, "PMTiles output");
     const packageSummary = await runner(packageSummaryCommand(tilePath, options.ogrinfo));
-    validatePackageSummary(packageSummary.stdout);
+    validatePackageSummary(packageSummary.stdout, extracts.map((extract) => extract.outputLayer));
 
     const agreementFilename = "USER_AGREEMENT.txt";
     await copyFile(path.resolve(options.userAgreement), path.join(temporary, agreementFilename));
-    const manifest = createManifest(options, cell, bounds, tileFilename, agreementFilename);
+    const manifest = createManifest(options, cell, bounds, tileFilename, agreementFilename, extracts.map((extract) => extract.outputLayer));
     const temporaryManifest = path.join(temporary, "manifest.json");
     await writeFile(temporaryManifest, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     const validation = await validateManifest(temporaryManifest);
@@ -289,6 +301,7 @@ function createManifest(
   bounds: Bounds,
   tileFilename: string,
   agreementFilename: string,
+  layers: readonly (typeof LAYER_NAMES)[number][],
 ): object {
   return {
     schemaVersion: 1,
@@ -312,7 +325,7 @@ function createManifest(
         url: `./${tileFilename}`,
         minZoom: options.minZoom ?? 0,
         maxZoom: options.maxZoom ?? 16,
-        layers: [...LAYER_NAMES],
+        layers,
       },
     ],
     cells: [
@@ -373,10 +386,10 @@ function parseBounds(value: unknown, layer: string): Bounds {
   return [west, south, east, north];
 }
 
-function validatePackageSummary(text: string): void {
+function validatePackageSummary(text: string, expectedLayers: readonly (typeof LAYER_NAMES)[number][]): void {
   const document = parseOgrDocument(text, "PMTiles summary");
   if (document.driverShortName !== "PMTiles") throw new Error("Generated output is not reported as PMTiles");
-  for (const layerName of LAYER_NAMES) {
+  for (const layerName of expectedLayers) {
     const layer = document.layers?.find((candidate) => candidate.name === layerName);
     if (layer === undefined || !Number.isInteger(layer.featureCount) || Number(layer.featureCount) < 1) {
       throw new Error(`Generated PMTiles layer ${layerName} is absent or empty`);
