@@ -157,7 +157,11 @@ button { font: inherit; }
   background: rgb(251 253 248 / 94%);
   box-shadow: 0 4px 16px rgb(0 27 38 / 22%);
   backdrop-filter: blur(4px);
+  max-height: min(50vh, 24rem);
+  overflow: auto;
 }
+
+.chart-status.is-warning { color: #541e14; background: rgb(255 241 220 / 96%); }
 
 .status-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; }
 
@@ -172,11 +176,14 @@ button { font: inherit; }
   text-transform: uppercase;
 }
 
+.status-pill.is-noaa { color: #fff; background: #087fcb; }
+
 .chart-status dl { margin: 0.75rem 0; font-size: 0.78rem; }
 .chart-status dl div { display: grid; grid-template-columns: 4rem 1fr; gap: 0.5rem; }
 .chart-status dt { color: #526872; }
 .chart-status dd { margin: 0; font-weight: 650; }
 .chart-status p { margin: 0; color: #526872; font-size: 0.72rem; line-height: 1.35; }
+.chart-status a { color: #075c92; font-weight: 700; }
 
 @media (max-width: 680px) {
   .app-header { min-height: 4rem; }

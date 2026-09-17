@@ -1,13 +1,13 @@
 # Chartplotter preprocessing pipeline
 
-This Node/TypeScript project inspects NOAA S-57 exchange sets and validates the
-manifest contract consumed by the web application. It is an initial safety
-spike: it does **not** yet apply S-57 updates or generate vector tiles.
+This Node/TypeScript project inspects NOAA S-57 exchange sets, converts one
+extracted cell into PMTiles, and validates the manifest consumed by the web app.
 
 ## Requirements
 
 - Node.js 22.12 or newer
 - npm
+- GDAL/OGR with the S-57 and PMTiles vector drivers (`ogrinfo` and `ogr2ogr`)
 
 Install dependencies and run all checks:
 
@@ -25,6 +25,7 @@ Example:
 ```sh
 cd data/source/
 curl -O https://charts.noaa.gov/ENCs/WI_ENCs.zip
+unzip WI_ENCs.zip
 ```
 
 ## Inspect an exchange set
@@ -46,6 +47,36 @@ Passing this inventory check only establishes that the files needed for an
 ordered update chain are present. It does not establish that their S-57 content
 is valid or that applying the updates succeeds.
 
+## Convert one extracted cell
+
+Keep the base `.000` file and every sequential `.001`, `.002`, … update beside
+one another. Supply the NOAA archive's `USERAGREEMENT.TXT` as the user agreement:
+
+```sh
+npm run cli -- convert-cell \
+  ../data/source/WI_ENCs/ENC_ROOT/US4WI1DP/US4WI1DP.000 \
+  --output ../data/packages/us4wi1dp \
+  --package-id wisconsin-us4wi1dp \
+  --name "NOAA ENC US4WI1DP" \
+  --source-url https://charts.noaa.gov/ENCs/WI_ENCs.zip \
+  --retrieved-at 2026-09-17T12:00:00Z \
+  --user-agreement ../data/source/WI_ENCs/ENC_ROOT/USERAGREEMENT.TXT
+```
+
+The command applies updates through GDAL, splits multipoint `SOUNDG` features,
+adds each sounding's `DEPTH`, and stages renamed `COALNE`, `DEPARE`, `DEPCNT`,
+and `SOUNDG` layers in a temporary GeoPackage. GDAL's native PMTiles driver
+creates the archive. The final directory also contains a schema-v1
+`manifest.json` and `USER_AGREEMENT.txt`.
+
+Conversion refuses incomplete update sequences, an applied DSID update number
+that differs from the highest update file, absent or empty required layers or
+`M_COVR` coverage, absent DSID/DSPM metadata, non-metre source depths, an
+invalid generated PMTiles layer set, and an existing output directory. Output
+is published only after all checks pass. Coverage bounds come from `M_COVR`.
+The manifest preserves edition, update number and dates, compilation scale,
+vertical and sounding datums, source URL, and retrieval time.
+
 ## Validate a package manifest
 
 ```sh
@@ -64,7 +95,7 @@ and are not extracted chart metadata or navigation-grade data.
 - `npm run build` compiles the CLI into `dist/`.
 - `npm run check` runs type checking, tests, and example manifest validation.
 
-The next processing stage should use a proven S-57 implementation (for example,
-GDAL/OGR) to apply each cell's update chain in the exact inventory order, then
-extract `COALNE`, `DEPARE`, `DEPCNT`, and `SOUNDG` while preserving the shared
-schema's provenance, scale, depth-unit, datum, and bounds fields.
+This remains a one-cell processing spike. Multi-cell overlap resolution,
+usage-band selection, full-Wisconsin packaging, and automated NOAA refreshes
+are later milestones. Successful conversion does not establish
+navigation-grade correctness.

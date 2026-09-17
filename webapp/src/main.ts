@@ -1,11 +1,20 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
+import { parseChartPackageManifest } from "./chart-package";
+import { configuredManifestUrl } from "./chart-package-url";
 import { MapControls } from "./controls/map-controls";
 import { PositionTracker, type PositionState } from "./gps/position-tracker";
 import { centerMapOn } from "./map/center-on-position";
 import { createMap } from "./map/create-map";
+import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
-import { renderChartStatus, renderLocationStatus } from "./ui/chart-status";
+import {
+  renderChartError,
+  renderChartLoading,
+  renderChartStatus,
+  renderLocationStatus,
+  renderPackageChartStatus,
+} from "./ui/chart-status";
 
 const mapElement = requiredElement("map");
 const controlsElement = requiredElement("map-controls");
@@ -13,6 +22,7 @@ const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
 
 const map = createMap(mapElement);
+const mapLoaded = new Promise<void>((resolve) => map.once("load", () => resolve()));
 let controls: MapControls;
 let latestPosition: GeolocationPosition | undefined;
 
@@ -30,10 +40,6 @@ controls = new MapControls(controlsElement, {
   },
 });
 
-map.on("load", () => {
-  addPositionLayer(map);
-  if (latestPosition) updatePositionLayer(map, latestPosition);
-});
 map.on("dragstart", () => {
   if (!controls.isFollowing) return;
   controls.setFollowing(false);
@@ -41,8 +47,46 @@ map.on("dragstart", () => {
   renderLocationStatus(locationStatusElement, "Location follow paused after manual pan.");
 });
 
-renderChartStatus(chartStatusElement);
 renderLocationStatus(locationStatusElement, "");
+void initializeChart();
+
+async function initializeChart(): Promise<void> {
+  const requestedManifestUrl = configuredManifestUrl(
+    window.location.search,
+    window.location.href,
+    import.meta.env.VITE_CHART_MANIFEST_URL,
+  );
+
+  try {
+    if (!requestedManifestUrl) {
+      renderChartStatus(chartStatusElement);
+      await mapLoaded;
+      addDemoChartLayers(map);
+      return;
+    }
+
+    renderChartLoading(chartStatusElement, requestedManifestUrl);
+    const response = await fetch(requestedManifestUrl);
+    if (!response.ok) throw new Error(`Manifest request failed (${response.status} ${response.statusText})`);
+    const manifest = parseChartPackageManifest(await response.json());
+    if (!manifest.tileSets.some((tileSet) => tileSet.format === "pmtiles")) {
+      throw new Error("The chart package does not contain a PMTiles archive.");
+    }
+    const manifestUrl = new URL(response.url || requestedManifestUrl.href);
+    await mapLoaded;
+    addPackageChartLayers(map, manifest, manifestUrl);
+    const [west, south, east, north] = manifest.bounds;
+    map.fitBounds([[west, south], [east, north]], { padding: 48, duration: 0 });
+    renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
+  } catch (error) {
+    await mapLoaded;
+    renderChartError(chartStatusElement, error instanceof Error ? error.message : "Unknown chart package error");
+  } finally {
+    await mapLoaded;
+    addPositionLayer(map);
+    if (latestPosition) updatePositionLayer(map, latestPosition);
+  }
+}
 
 function handlePositionState(state: PositionState): void {
   switch (state.kind) {

@@ -2,7 +2,19 @@
 
 Framework-free TypeScript user interface for viewing chart packages produced by `pipeline/`. MapLibre GL JS supplies map rendering and its standard pointer, wheel, keyboard, and touch gestures.
 
-The current map uses conspicuously labeled synthetic geometry near Milwaukee. It proves the shell and shared layer vocabulary without presenting invented geometry as NOAA chart data. It must be replaced by a package conforming to `../schema/tile-metadata.schema.json` before chart-display acceptance criteria can pass.
+With no chart package configured, the map uses conspicuously labeled synthetic geometry near Milwaukee. It proves the shell and shared layer vocabulary without presenting invented geometry as NOAA chart data.
+
+To open a schema-v1 package, pass its manifest URL in the query string:
+
+```text
+http://localhost:5173/?manifest=/charts/manifest.json
+```
+
+Alternatively, set `VITE_CHART_MANIFEST_URL=/charts/manifest.json` at build time for a stable default. A query-string URL takes precedence. Relative PMTiles and user-agreement paths are resolved against the final manifest response URL, including after redirects. The package server must support HTTP range requests and CORS when it is on a different origin.
+
+Configured manifests are validated defensively before use. A bad or unavailable configured package produces a visible error instead of silently displaying the synthetic preview.
+
+Sounding labels currently use MapLibre's public demonstration glyph endpoint. M4 must package those glyphs with the application shell before offline chart-display acceptance can pass.
 
 ## Commands
 
@@ -22,7 +34,8 @@ Or run the corresponding workspace commands from the repository root.
 
 ## Structure
 
-- `src/map/` creates the MapLibre map, preview chart layers, and GPS accuracy/position layers.
+- `src/chart-package.ts` validates the schema-v1 fields consumed by the viewer.
+- `src/map/` creates the MapLibre map, PMTiles or preview chart layers, and GPS accuracy/position layers.
 - `src/gps/` owns the browser geolocation watch and translates browser errors into explicit application states.
 - `src/controls/` provides accessible directional pan, zoom, and location-follow buttons.
 - `src/ui/` renders chart provenance and visible location status.

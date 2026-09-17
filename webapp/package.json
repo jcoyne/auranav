@@ -14,7 +14,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "maplibre-gl": "^6.10.0"
+    "maplibre-gl": "^6.10.0",
+    "pmtiles": "^4.5.0"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

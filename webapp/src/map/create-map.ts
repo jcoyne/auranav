@@ -1,5 +1,4 @@
 import { AttributionControl, Map as MapLibreMap } from "maplibre-gl";
-import { addDemoChartLayers } from "./chart-layers";
 
 export function createMap(container: HTMLElement): MapLibreMap {
   const map = new MapLibreMap({
@@ -11,12 +10,12 @@ export function createMap(container: HTMLElement): MapLibreMap {
     attributionControl: false,
     style: {
       version: 8,
+      glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
       sources: {},
       layers: [{ id: "water", type: "background", paint: { "background-color": "#d8f3f5" } }],
     },
   });
 
   map.addControl(new AttributionControl({ compact: true }), "bottom-right");
-  map.on("load", () => addDemoChartLayers(map));
   return map;
 }
