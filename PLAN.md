@@ -46,25 +46,25 @@ Acceptance: each project documents its local commands; the manifest example vali
 
 - [x] Download or accept one NOAA S-57 cell and its sequential updates.
 - [x] Verify update ordering and reject missing update sequences.
-- [ ] Extract coastline (`COALNE`), soundings (`SOUNDG`), depth contours (`DEPCNT`), and depth areas (`DEPARE`).
-- [ ] Produce a local vector-tile package and conforming manifest.
+- [x] Extract coastline (`COALNE`), soundings (`SOUNDG`), depth contours (`DEPCNT`), and depth areas (`DEPARE`).
+- [x] Produce a local vector-tile package and conforming manifest.
 
 Acceptance: a repeatable command transforms a pinned fixture or downloaded cell into a package that the webapp can open; provenance and update metadata survive the conversion.
 
 ### M2: Core map
 
 - [ ] Render shoreline, depth areas, contours, and soundings from the spike package.
-- [ ] Support mouse/touch pan, wheel/pinch zoom, and visible pan/zoom controls.
+- [x] Support mouse/touch pan, wheel/pinch zoom, and visible pan/zoom controls.
 - [ ] Select appropriate data by scale and show an overscale warning.
-- [ ] Show chart source, edition/update date, depth units, and vertical datum.
+- [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
 
 ### M3: GPS
 
-- [ ] Add explicit locate and follow controls using the browser Geolocation API.
+- [x] Add explicit locate and follow controls using the browser Geolocation API.
 - [ ] Display position, accuracy circle, timestamp, and stale-fix state.
-- [ ] Handle unsupported, denied, unavailable, and timed-out location states.
+- [x] Handle unsupported, denied, unavailable, and timed-out location states.
 
 Acceptance: automated tests cover each location state; stopping follow mode releases the geolocation watch.
 

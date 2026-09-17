@@ -45,6 +45,18 @@ describe("MapControls", () => {
     expect(onFollowChange).toHaveBeenLastCalledWith(false);
   });
 
+  it("turns follow off before an explicit pan", () => {
+    const onFollowChange = vi.fn();
+    const controls = new MapControls(container, { map, onFollowChange });
+    getButton("Center and follow your location").click();
+
+    getButton("Pan right").click();
+
+    expect(controls.isFollowing).toBe(false);
+    expect(onFollowChange).toHaveBeenLastCalledWith(false);
+    expect(map.panBy).toHaveBeenCalledWith([120, 0]);
+  });
+
   function getButton(name: string): HTMLButtonElement {
     const button = [...container.querySelectorAll("button")]
       .find((candidate) => candidate.getAttribute("aria-label") === name);

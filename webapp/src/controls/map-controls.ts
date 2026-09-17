@@ -20,11 +20,18 @@ export class MapControls {
     panPad.className = "pan-pad";
     panPad.setAttribute("aria-label", "Pan map");
 
+    const pan = (offset: [number, number]): void => {
+      if (this.#following) {
+        this.setFollowing(false);
+        options.onFollowChange(false);
+      }
+      options.map.panBy(offset);
+    };
     panPad.append(
-      this.#button("↑", "Pan up", () => options.map.panBy([0, -PAN_DISTANCE]), "pan-north"),
-      this.#button("←", "Pan left", () => options.map.panBy([-PAN_DISTANCE, 0]), "pan-west"),
-      this.#button("→", "Pan right", () => options.map.panBy([PAN_DISTANCE, 0]), "pan-east"),
-      this.#button("↓", "Pan down", () => options.map.panBy([0, PAN_DISTANCE]), "pan-south"),
+      this.#button("↑", "Pan up", () => pan([0, -PAN_DISTANCE]), "pan-north"),
+      this.#button("←", "Pan left", () => pan([-PAN_DISTANCE, 0]), "pan-west"),
+      this.#button("→", "Pan right", () => pan([PAN_DISTANCE, 0]), "pan-east"),
+      this.#button("↓", "Pan down", () => pan([0, PAN_DISTANCE]), "pan-south"),
     );
 
     const zoomGroup = document.createElement("div");
