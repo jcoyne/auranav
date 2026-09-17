@@ -1,4 +1,5 @@
 import type { ChartPackageManifest } from "../chart-package";
+import type { ChartScaleState } from "../map/chart-scale";
 import { resolvePackageAssetUrl } from "../chart-package-url";
 
 export function renderChartStatus(container: HTMLElement): void {
@@ -99,4 +100,21 @@ export function renderLocationStatus(container: HTMLElement, message: string, wa
   container.textContent = message;
   container.classList.toggle("is-warning", warning);
   container.hidden = message.length === 0;
+}
+
+export function renderScaleStatus(container: HTMLElement, state: ChartScaleState): void {
+  if (state.kind === "outside-coverage") {
+    container.textContent = "Outside chart coverage";
+    container.hidden = false;
+    return;
+  }
+
+  if (state.overscaleFactor <= 1) {
+    container.textContent = "";
+    container.hidden = true;
+    return;
+  }
+
+  container.textContent = `Overscale ×${state.overscaleFactor.toFixed(1)} · ${state.cell.name} compiled at 1:${state.cell.compilationScale.toLocaleString()}`;
+  container.hidden = false;
 }

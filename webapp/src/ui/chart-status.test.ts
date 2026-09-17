@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChartPackageManifest } from "../chart-package";
-import { renderPackageChartStatus } from "./chart-status";
+import { renderPackageChartStatus, renderScaleStatus } from "./chart-status";
 
 const manifest: ChartPackageManifest = {
   schemaVersion: 1,
@@ -54,5 +54,32 @@ describe("renderPackageChartStatus", () => {
     expect(container.textContent).toContain("International Great Lakes Datum 1985");
     expect(container.textContent).toContain("1:90,000");
     expect(container.querySelector("a")?.href).toBe("https://example.test/charts/USER_AGREEMENT.txt");
+  });
+
+  it("shows overscale and coverage warnings only when needed", () => {
+    const container = document.createElement("section");
+    const cell = manifest.cells[0];
+    if (!cell) throw new Error("Expected fixture cell");
+
+    renderScaleStatus(container, {
+      kind: "covered",
+      cell,
+      displayScale: 45_000,
+      overscaleFactor: 2,
+    });
+    expect(container.hidden).toBe(false);
+    expect(container.textContent).toBe("Overscale ×2.0 · US4WI1DP compiled at 1:90,000");
+
+    renderScaleStatus(container, {
+      kind: "covered",
+      cell,
+      displayScale: 90_000,
+      overscaleFactor: 1,
+    });
+    expect(container.hidden).toBe(true);
+
+    renderScaleStatus(container, { kind: "outside-coverage", displayScale: 90_000 });
+    expect(container.textContent).toBe("Outside chart coverage");
+    expect(container.hidden).toBe(false);
   });
 });

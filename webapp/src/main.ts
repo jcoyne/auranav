@@ -7,6 +7,7 @@ import { PositionTracker, type PositionState } from "./gps/position-tracker";
 import { centerMapOn } from "./map/center-on-position";
 import { createMap } from "./map/create-map";
 import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
+import { evaluateChartScale } from "./map/chart-scale";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
 import {
   renderChartError,
@@ -14,12 +15,14 @@ import {
   renderChartStatus,
   renderLocationStatus,
   renderPackageChartStatus,
+  renderScaleStatus,
 } from "./ui/chart-status";
 
 const mapElement = requiredElement("map");
 const controlsElement = requiredElement("map-controls");
 const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
+const scaleStatusElement = requiredElement("scale-status");
 
 const map = createMap(mapElement);
 const mapLoaded = new Promise<void>((resolve) => map.once("load", () => resolve()));
@@ -78,6 +81,15 @@ async function initializeChart(): Promise<void> {
     const [west, south, east, north] = manifest.bounds;
     map.fitBounds([[west, south], [east, north]], { padding: 48, duration: 0 });
     renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
+    const updateScaleStatus = (): void => {
+      const center = map.getCenter();
+      renderScaleStatus(
+        scaleStatusElement,
+        evaluateChartScale(manifest.cells, map.getZoom(), center.lng, center.lat),
+      );
+    };
+    map.on("moveend", updateScaleStatus);
+    updateScaleStatus();
   } catch (error) {
     await mapLoaded;
     renderChartError(chartStatusElement, error instanceof Error ? error.message : "Unknown chart package error");

@@ -144,6 +144,24 @@ button { font: inherit; }
 
 .location-status.is-warning { color: #541e14; background: #fff1dc; }
 
+.scale-status {
+  position: absolute;
+  z-index: 2;
+  top: 4.2rem;
+  left: 50%;
+  max-width: min(34rem, calc(100% - 12rem));
+  padding: 0.5rem 0.8rem;
+  transform: translateX(-50%);
+  border: 1px solid #8d4b00;
+  border-radius: 0.45rem;
+  color: #541e14;
+  background: rgb(255 220 145 / 96%);
+  box-shadow: 0 2px 9px rgb(0 27 38 / 18%);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: center;
+}
+
 .chart-status {
   position: absolute;
   z-index: 2;
@@ -193,6 +211,10 @@ button { font: inherit; }
     top: auto;
     bottom: 13.5rem;
     max-width: calc(100% - 2rem);
+  }
+  .scale-status {
+    top: 1rem;
+    max-width: calc(100% - 8rem);
   }
 }
 

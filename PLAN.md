@@ -55,7 +55,8 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 
 - [ ] Render shoreline, depth areas, contours, and soundings from the spike package.
 - [x] Support mouse/touch pan, wheel/pinch zoom, and visible pan/zoom controls.
-- [ ] Select appropriate data by scale and show an overscale warning.
+- [x] Show an overscale warning and detect when the map center leaves chart coverage.
+- [ ] Select appropriate cells by scale without duplicating overlapping chart features.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
