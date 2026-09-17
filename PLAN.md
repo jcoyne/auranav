@@ -81,7 +81,7 @@ Acceptance: an installed application with a downloaded package starts and displa
 
 ### M5: Wisconsin coverage and updates
 
-- [ ] Process all cells in the Wisconsin exchange set.
+- [x] Process all active cells in the Wisconsin exchange set, omitting edition-zero cancellation records.
 - [ ] Resolve overlapping usage bands and coverage boundaries.
 - [ ] Automate NOAA catalog checks and atomic package replacement.
 - [ ] Retain the previous verified package if an update fails.
