@@ -20,6 +20,8 @@ export interface ConvertExchangeSetOptions {
   readonly maxZoom?: number;
   /** Process the first N cells in inventory order. Intended for smoke tests. */
   readonly limit?: number;
+  /** Maximum cell conversions to run concurrently. Defaults to four. */
+  readonly jobs?: number;
   readonly ogrinfo?: string;
   readonly ogr2ogr?: string;
 }
@@ -49,6 +51,9 @@ export async function convertExchangeSet(
   if (options.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 1)) {
     throw new Error("limit must be a positive integer");
   }
+  if (options.jobs !== undefined && (!Number.isInteger(options.jobs) || options.jobs < 1 || options.jobs > 16)) {
+    throw new Error("jobs must be an integer from 1 through 16");
+  }
 
   const inputDirectory = path.resolve(options.inputDirectory);
   const inventory = await inspectExchangeSet(inputDirectory);
@@ -66,33 +71,50 @@ export async function convertExchangeSet(
   const generatedAt = options.generatedAt ?? new Date().toISOString();
 
   try {
-    const manifests: CellManifest[] = [];
-    for (const inventoryCell of selectedCells) {
+    const results: Array<CellManifest | undefined> = new Array(selectedCells.length);
+    let nextIndex = 0;
+    let failure: unknown;
+    let hasFailure = false;
+    const convertNext = async (): Promise<void> => {
+      while (!hasFailure) {
+        const cellIndex = nextIndex;
+        nextIndex += 1;
+        const inventoryCell = selectedCells[cellIndex];
+        if (inventoryCell === undefined) return;
+        try {
+          results[cellIndex] = await convertInventoryCell(inventoryCell);
+        } catch (error: unknown) {
+          if (error instanceof CancelledCellError) continue;
+          failure = error;
+          hasFailure = true;
+        }
+      }
+    };
+    const jobCount = Math.min(options.jobs ?? 4, selectedCells.length);
+    await Promise.all(Array.from({ length: jobCount }, convertNext));
+    if (hasFailure) throw failure;
+    const manifests = results.filter((manifest): manifest is CellManifest => manifest !== undefined);
+
+    async function convertInventoryCell(inventoryCell: (typeof selectedCells)[number]): Promise<CellManifest> {
       if (inventoryCell.base === null) throw new Error(`No base cell found for ${inventoryCell.name}`);
       const baseCell = path.resolve(inputDirectory, inventoryCell.base);
       if (!isWithin(inputDirectory, baseCell)) throw new Error(`Cell path escapes the exchange-set directory: ${inventoryCell.base}`);
       const cellId = inventoryCell.name.toLowerCase();
       const workDirectory = path.join(temporary, "work", cellId);
-      let manifestPath: string;
-      try {
-        manifestPath = await converter({
-          baseCell,
-          outputDirectory: workDirectory,
-          packageId: `${options.packageId}-${cellId}`,
-          packageName: `${options.packageName} — ${inventoryCell.name}`,
-          sourceUrl: options.sourceUrl,
-          retrievedAt: options.retrievedAt,
-          userAgreement: options.userAgreement,
-          generatedAt,
-          ...(options.minZoom === undefined ? {} : { minZoom: options.minZoom }),
-          ...(options.maxZoom === undefined ? {} : { maxZoom: options.maxZoom }),
-          ...(options.ogrinfo === undefined ? {} : { ogrinfo: options.ogrinfo }),
-          ...(options.ogr2ogr === undefined ? {} : { ogr2ogr: options.ogr2ogr }),
-        });
-      } catch (error: unknown) {
-        if (error instanceof CancelledCellError) continue;
-        throw error;
-      }
+      const manifestPath = await converter({
+        baseCell,
+        outputDirectory: workDirectory,
+        packageId: `${options.packageId}-${cellId}`,
+        packageName: `${options.packageName} — ${inventoryCell.name}`,
+        sourceUrl: options.sourceUrl,
+        retrievedAt: options.retrievedAt,
+        userAgreement: options.userAgreement,
+        generatedAt,
+        ...(options.minZoom === undefined ? {} : { minZoom: options.minZoom }),
+        ...(options.maxZoom === undefined ? {} : { maxZoom: options.maxZoom }),
+        ...(options.ogrinfo === undefined ? {} : { ogrinfo: options.ogrinfo }),
+        ...(options.ogr2ogr === undefined ? {} : { ogr2ogr: options.ogr2ogr }),
+      });
       const manifest = await readCellManifest(manifestPath);
       const copiedTileSets: Record<string, unknown>[] = [];
       for (const [tileIndex, tileSet] of manifest.tileSets.entries()) {
@@ -102,7 +124,7 @@ export async function convertExchangeSet(
         await copyFile(sourceTile, path.join(temporary, "tiles", tileFilename));
         copiedTileSets.push({ ...tileSet, url: `./tiles/${tileFilename}` });
       }
-      manifests.push({ ...manifest, tileSets: copiedTileSets });
+      return { ...manifest, tileSets: copiedTileSets };
     }
 
     const first = manifests[0];

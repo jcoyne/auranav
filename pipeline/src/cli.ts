@@ -60,7 +60,8 @@ function usage(problem?: string): never {
     [--generated-at <date-time>] [--min-zoom <0-22>] [--max-zoom <0-22>]
   npm run cli -- convert-exchange-set <extracted-directory> --output <directory> --package-id <id>
     --name <name> --source-url <url> --retrieved-at <date-time> --user-agreement <file>
-    [--generated-at <date-time>] [--min-zoom <0-22>] [--max-zoom <0-22>] [--limit <count>]`);
+    [--generated-at <date-time>] [--min-zoom <0-22>] [--max-zoom <0-22>]
+    [--limit <count>] [--jobs <1-16>]`);
   process.exit(2);
 }
 
@@ -69,12 +70,13 @@ function parseBatchOptions(args: readonly string[]): ConvertExchangeSetOptions {
   if (inputDirectory === undefined || inputDirectory.startsWith("--")) usage("convert-exchange-set requires an extracted directory");
   const values = parseOptionPairs(tokens, new Set([
     "--output", "--package-id", "--name", "--source-url", "--retrieved-at", "--user-agreement",
-    "--generated-at", "--min-zoom", "--max-zoom", "--limit",
+    "--generated-at", "--min-zoom", "--max-zoom", "--limit", "--jobs",
   ]), "convert-exchange-set");
   const required = (key: string): string => requireOption(values, key, "convert-exchange-set");
   const minZoom = optionalInteger(values, "--min-zoom");
   const maxZoom = optionalInteger(values, "--max-zoom");
   const limit = optionalInteger(values, "--limit");
+  const jobs = optionalInteger(values, "--jobs");
   return {
     inputDirectory,
     outputDirectory: required("--output"),
@@ -87,6 +89,7 @@ function parseBatchOptions(args: readonly string[]): ConvertExchangeSetOptions {
     ...(minZoom === undefined ? {} : { minZoom }),
     ...(maxZoom === undefined ? {} : { maxZoom }),
     ...(limit === undefined ? {} : { limit }),
+    ...(jobs === undefined ? {} : { jobs }),
   };
 }
 

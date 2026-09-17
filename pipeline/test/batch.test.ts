@@ -55,6 +55,23 @@ describe("convertExchangeSet", () => {
     expect(manifest.cells.map((cell) => cell.name)).toEqual(["US1AAAAA", "US2BBBBB"]);
   });
 
+  it("bounds parallel work while preserving inventory order", async () => {
+    const fixture = await exchangeSet(["US1AAAAA", "US2BBBBB", "US3CCCCC"]);
+    const output = path.join(fixture.root, "output");
+    let active = 0;
+    let maximumActive = 0;
+    const manifestPath = await convertExchangeSet({ ...options(fixture.input, fixture.agreement, output), jobs: 2 }, async (cellOptions) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return await fakeConvertCell(cellOptions, [-90, 40, -85, 45]);
+    });
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { cells: { name: string }[] };
+    expect(maximumActive).toBe(2);
+    expect(manifest.cells.map((cell) => cell.name)).toEqual(["US1AAAAA", "US2BBBBB", "US3CCCCC"]);
+  });
+
   it("removes all staged output when any cell conversion fails", async () => {
     const fixture = await exchangeSet(["US1AAAAA", "US2BBBBB"]);
     const output = path.join(fixture.root, "output");
@@ -93,6 +110,14 @@ describe("convertExchangeSet", () => {
       throw new Error("unexpected");
     })).rejects.toThrow("missing sequential update 001");
     expect(called).toBe(false);
+  });
+
+  it("rejects unsafe concurrency limits", async () => {
+    const fixture = await exchangeSet(["US1AAAAA"]);
+    await expect(convertExchangeSet({
+      ...options(fixture.input, fixture.agreement, path.join(fixture.root, "output")),
+      jobs: 0,
+    })).rejects.toThrow("jobs must be an integer from 1 through 16");
   });
 });
 

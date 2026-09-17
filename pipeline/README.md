@@ -95,7 +95,8 @@ npm run cli -- convert-exchange-set \
 ```
 
 `--limit N` converts only the first N cells in sorted inventory order and is
-useful for smoke tests. The final output directory is renamed into place only
+useful for smoke tests. Up to four cells convert concurrently by default;
+`--jobs N` sets a limit from 1 through 16. The final output directory is renamed into place only
 after every selected cell converts and the combined manifest validates. A
 failure removes all staged output. The command currently requires an extracted
 directory; ZIP input remains supported by `inventory` only. S-57 cells whose
