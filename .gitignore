@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.log
+*.tsbuildinfo
+
+data/*
+!data/.gitkeep
+
+pipeline/tmp/
+pipeline/output/
+webapp/public/charts/

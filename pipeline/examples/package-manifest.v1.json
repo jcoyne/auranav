@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "packageId": "wisconsin-spike",
+  "name": "Wisconsin NOAA ENC processing spike",
+  "generatedAt": "2026-09-17T12:00:00Z",
+  "source": {
+    "publisher": "NOAA Office of Coast Survey",
+    "product": "NOAA ENC",
+    "downloadUrl": "https://charts.noaa.gov/ENCs/WI_ENCs.zip",
+    "retrievedAt": "2026-09-17T12:00:00Z",
+    "userAgreementPath": "./NOAA-ENC-user-agreement.txt"
+  },
+  "bounds": [-92.9, 42.4, -86.2, 47.1],
+  "depth": {
+    "storedUnit": "metre",
+    "displayUnit": "foot",
+    "verticalDatums": ["See source ENC cell metadata"]
+  },
+  "tileSets": [
+    {
+      "id": "wisconsin-spike",
+      "format": "pmtiles",
+      "url": "./wisconsin-spike.pmtiles",
+      "minZoom": 4,
+      "maxZoom": 16,
+      "layers": ["coastline", "depth-area", "depth-contour", "sounding"]
+    }
+  ],
+  "cells": [
+    {
+      "name": "US5WI1AA",
+      "edition": 1,
+      "updateNumber": 0,
+      "issueDate": "2026-09-17",
+      "updateApplicationDate": "2026-09-17",
+      "usageBand": 5,
+      "compilationScale": 20000,
+      "verticalDatum": "See source ENC cell metadata",
+      "bounds": [-88.1, 43.0, -87.8, 43.3]
+    }
+  ]
+}

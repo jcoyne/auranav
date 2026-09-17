@@ -1,0 +1,29 @@
+{
+  "name": "@chartplotter/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run validate:example",
+    "cli": "tsx src/cli.ts",
+    "validate:example": "tsx src/cli.ts validate-manifest examples/package-manifest.v1.json"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yauzl": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/yauzl": "^2.10.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^5.0.1"
+  }
+}
