@@ -17,6 +17,7 @@ const validManifest = {
   depth: { storedUnit: "metre", displayUnit: "foot", verticalDatums: ["Low Water Datum"] },
   tileSets: [{
     id: "demo",
+    cellName: "US4WI1DP",
     format: "pmtiles",
     url: "./wisconsin.pmtiles",
     minZoom: 6,
@@ -61,5 +62,26 @@ describe("parseChartPackageManifest", () => {
     ["missing cells", { ...validManifest, cells: [] }],
   ])("rejects %s", (_label, candidate) => {
     expect(() => parseChartPackageManifest(candidate)).toThrow(ManifestError);
+  });
+
+  it("requires tile ownership for multi-cell packages", () => {
+    const secondCell = { ...validManifest.cells[0], name: "US5WI1DP" };
+    expect(() => parseChartPackageManifest({
+      ...validManifest,
+      cells: [validManifest.cells[0], secondCell],
+      tileSets: [{ ...validManifest.tileSets[0], cellName: undefined }],
+    })).toThrow("tileSets[0].cellName");
+    expect(() => parseChartPackageManifest({
+      ...validManifest,
+      tileSets: [{ ...validManifest.tileSets[0], cellName: "US5WI1DP" }],
+    })).toThrow("does not identify a manifest cell");
+  });
+
+  it("normalizes a legacy one-cell tile set without an owner", () => {
+    const parsed = parseChartPackageManifest({
+      ...validManifest,
+      tileSets: [{ ...validManifest.tileSets[0], cellName: undefined }],
+    });
+    expect(parsed.tileSets[0]?.cellName).toBe("US4WI1DP");
   });
 });

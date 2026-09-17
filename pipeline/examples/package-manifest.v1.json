@@ -19,6 +19,7 @@
   "tileSets": [
     {
       "id": "wisconsin-spike",
+      "cellName": "US5WI1AA",
       "format": "pmtiles",
       "url": "./wisconsin-spike.pmtiles",
       "minZoom": 4,

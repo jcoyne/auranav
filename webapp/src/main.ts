@@ -7,7 +7,8 @@ import { PositionTracker, type PositionState } from "./gps/position-tracker";
 import { centerMapOn } from "./map/center-on-position";
 import { createMap } from "./map/create-map";
 import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
-import { evaluateChartScale } from "./map/chart-scale";
+import { displayScaleDenominator, evaluateChartScale } from "./map/chart-scale";
+import { selectChartCells } from "./map/cell-selection";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
 import {
   renderChartError,
@@ -77,19 +78,26 @@ async function initializeChart(): Promise<void> {
     }
     const manifestUrl = new URL(response.url || requestedManifestUrl.href);
     await mapLoaded;
-    addPackageChartLayers(map, manifest, manifestUrl);
+    const chartLayers = addPackageChartLayers(map, manifest, manifestUrl);
     const [west, south, east, north] = manifest.bounds;
-    map.fitBounds([[west, south], [east, north]], { padding: 48, duration: 0 });
     renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
-    const updateScaleStatus = (): void => {
+    const updateChartView = (): void => {
       const center = map.getCenter();
+      const bounds = map.getBounds();
+      const selectedCells = selectChartCells(
+        manifest.cells,
+        [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        displayScaleDenominator(map.getZoom(), center.lat),
+      );
+      chartLayers.showCells(selectedCells.map((cell) => cell.name));
       renderScaleStatus(
         scaleStatusElement,
-        evaluateChartScale(manifest.cells, map.getZoom(), center.lng, center.lat),
+        evaluateChartScale(selectedCells, map.getZoom(), center.lng, center.lat),
       );
     };
-    map.on("moveend", updateScaleStatus);
-    updateScaleStatus();
+    map.on("moveend", updateChartView);
+    map.fitBounds([[west, south], [east, north]], { padding: 48, duration: 0 });
+    updateChartView();
   } catch (error) {
     await mapLoaded;
     renderChartError(chartStatusElement, error instanceof Error ? error.message : "Unknown chart package error");

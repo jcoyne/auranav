@@ -22,6 +22,7 @@ const manifest: ChartPackageManifest = {
   },
   tileSets: [{
     id: "us4wi1dp-chart",
+    cellName: "US4WI1DP",
     format: "pmtiles",
     url: "./wisconsin-us4wi1dp.pmtiles",
     minZoom: 6,
@@ -81,5 +82,20 @@ describe("renderPackageChartStatus", () => {
     renderScaleStatus(container, { kind: "outside-coverage", displayScale: 90_000 });
     expect(container.textContent).toBe("Outside chart coverage");
     expect(container.hidden).toBe(false);
+  });
+
+  it("summarizes large multi-cell packages instead of listing every cell", () => {
+    const container = document.createElement("section");
+    const cells = ["US2AAAAA", "US4AAAAA", "US5AAAAA", "US6AAAAA"].map((name, index) => ({
+      ...manifest.cells[0]!,
+      name,
+      compilationScale: [1_200_000, 90_000, 20_000, 5_000][index]!,
+    }));
+
+    renderPackageChartStatus(container, { ...manifest, cells }, new URL("https://example.test/manifest.json"));
+
+    expect(container.textContent).toContain("4 cells (edition and update metadata retained per cell)");
+    expect(container.textContent).toContain("1:5,000, 1:20,000, 1:90,000, 1:1,200,000");
+    expect(container.textContent).not.toContain("US2AAAAA ed.");
   });
 });

@@ -57,6 +57,7 @@
         "required": ["id", "format", "url", "minZoom", "maxZoom", "layers"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
+          "cellName": { "type": "string", "pattern": "^US[1-6][A-Z0-9]{5}$" },
           "format": { "enum": ["pmtiles", "mvt"] },
           "url": { "type": "string", "minLength": 1 },
           "minZoom": { "type": "integer", "minimum": 0, "maximum": 24 },
@@ -91,6 +92,26 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "cells": { "type": "array", "minItems": 2 } },
+        "required": ["cells"]
+      },
+      "then": {
+        "properties": {
+          "tileSets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "cellName": {} },
+              "required": ["cellName"]
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "bounds": {
       "type": "array",

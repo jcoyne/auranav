@@ -24,23 +24,37 @@ export function addPackageChartLayers(
   map: MapLibreMap,
   manifest: ChartPackageManifest,
   manifestUrl: URL,
-): void {
+): { showCells(cellNames: readonly string[]): void } {
   registerPmtilesProtocol();
+  const added = new Map<number, string[]>();
 
-  manifest.tileSets.forEach((tileSet, index) => {
-    if (tileSet.format !== "pmtiles") return;
-    const archiveUrl = resolvePackageAssetUrl(tileSet.url, manifestUrl).href;
-    protocol.add(new PMTiles(archiveUrl));
-    const sourceId = `chart-${index}`;
-    map.addSource(sourceId, {
-      type: "vector",
-      url: `pmtiles://${archiveUrl}`,
-      attribution: "NOAA Office of Coast Survey",
-      minzoom: tileSet.minZoom,
-      maxzoom: tileSet.maxZoom,
-    });
-    addVectorLayers(map, sourceId, index, tileSet.layers, manifest.depth.displayUnit);
-  });
+  return {
+    showCells(cellNames) {
+      const visibleCells = new Set(cellNames);
+      manifest.tileSets.forEach((tileSet, index) => {
+        if (tileSet.format !== "pmtiles") return;
+        const existingLayerIds = added.get(index);
+        if (existingLayerIds) {
+          const visibility = visibleCells.has(tileSet.cellName) ? "visible" : "none";
+          existingLayerIds.forEach((layerId) => map.setLayoutProperty(layerId, "visibility", visibility));
+          return;
+        }
+        if (!visibleCells.has(tileSet.cellName)) return;
+
+        const archiveUrl = resolvePackageAssetUrl(tileSet.url, manifestUrl).href;
+        protocol.add(new PMTiles(archiveUrl));
+        const sourceId = `chart-${index}`;
+        map.addSource(sourceId, {
+          type: "vector",
+          url: `pmtiles://${archiveUrl}`,
+          attribution: "NOAA Office of Coast Survey",
+          minzoom: tileSet.minZoom,
+          maxzoom: tileSet.maxZoom,
+        });
+        added.set(index, addVectorLayers(map, sourceId, index, tileSet.layers, manifest.depth.displayUnit));
+      });
+    },
+  };
 }
 
 function registerPmtilesProtocol(): void {
@@ -55,10 +69,12 @@ function addVectorLayers(
   index: number,
   layers: ChartLayer[],
   displayUnit: DepthUnit,
-): void {
+): string[] {
+  const layerIds: string[] = [];
   if (layers.includes("depth-area")) {
+    const layerId = `chart-depth-area-${index}`;
     map.addLayer({
-      id: `chart-depth-area-${index}`,
+      id: layerId,
       type: "fill",
       source: sourceId,
       "source-layer": "depth-area",
@@ -71,26 +87,31 @@ function addVectorLayers(
         "fill-opacity": 0.88,
       },
     });
+    layerIds.push(layerId);
   }
 
   if (layers.includes("depth-contour")) {
+    const layerId = `chart-depth-contour-${index}`;
     map.addLayer({
-      id: `chart-depth-contour-${index}`,
+      id: layerId,
       type: "line",
       source: sourceId,
       "source-layer": "depth-contour",
       paint: { "line-color": "#367a90", "line-width": 1.5 },
     });
+    layerIds.push(layerId);
   }
 
   if (layers.includes("coastline")) {
+    const layerId = `chart-coastline-${index}`;
     map.addLayer({
-      id: `chart-coastline-${index}`,
+      id: layerId,
       type: "line",
       source: sourceId,
       "source-layer": "coastline",
       paint: { "line-color": "#282716", "line-width": 3 },
     });
+    layerIds.push(layerId);
   }
 
   if (layers.includes("sounding")) {
@@ -106,8 +127,10 @@ function addVectorLayers(
         "circle-radius": 12,
       },
     });
+    layerIds.push(hitLayerId);
+    const labelLayerId = `chart-sounding-label-${index}`;
     map.addLayer({
-      id: `chart-sounding-label-${index}`,
+      id: labelLayerId,
       type: "symbol",
       source: sourceId,
       "source-layer": "sounding",
@@ -125,8 +148,10 @@ function addVectorLayers(
         "text-halo-width": 1.5,
       },
     });
+    layerIds.push(labelLayerId);
     addSoundingInteraction(map, hitLayerId, displayUnit);
   }
+  return layerIds;
 }
 
 function soundingLabelExpression(unit: DepthUnit): ["number-format", ["*", ["get", "depth"], number], object] {

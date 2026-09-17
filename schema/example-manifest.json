@@ -19,6 +19,7 @@
   "tileSets": [
     {
       "id": "demo",
+      "cellName": "US4WI1DP",
       "format": "pmtiles",
       "url": "./wisconsin-demo.pmtiles",
       "minZoom": 6,

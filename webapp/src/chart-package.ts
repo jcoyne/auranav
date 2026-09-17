@@ -5,6 +5,7 @@ export type DepthUnit = "metre" | "foot" | "fathom";
 
 export type ChartTileSet = {
   id: string;
+  cellName: string;
   format: "pmtiles" | "mvt";
   url: string;
   minZoom: number;
@@ -58,10 +59,11 @@ export function parseChartPackageManifest(value: unknown): ChartPackageManifest 
 
   const source = record(manifest.source, "source");
   const depth = record(manifest.depth, "depth");
-  const tileSets = array(manifest.tileSets, "tileSets").map(parseTileSet);
   const cells = array(manifest.cells, "cells").map(parseCell);
-  if (tileSets.length === 0) fail("tileSets must not be empty");
   if (cells.length === 0) fail("cells must not be empty");
+  const tileSets = array(manifest.tileSets, "tileSets")
+    .map((tileSet, index) => parseTileSet(tileSet, index, cells));
+  if (tileSets.length === 0) fail("tileSets must not be empty");
 
   const storedUnit = string(depth.storedUnit, "depth.storedUnit");
   if (storedUnit !== "metre") fail("depth.storedUnit must be metre");
@@ -95,7 +97,7 @@ export function parseChartPackageManifest(value: unknown): ChartPackageManifest 
   };
 }
 
-function parseTileSet(value: unknown, index: number): ChartTileSet {
+function parseTileSet(value: unknown, index: number, cells: readonly ChartCell[]): ChartTileSet {
   const tileSet = record(value, `tileSets[${index}]`);
   const format = string(tileSet.format, `tileSets[${index}].format`);
   if (format !== "pmtiles" && format !== "mvt") fail(`tileSets[${index}].format is unsupported`);
@@ -109,9 +111,16 @@ function parseTileSet(value: unknown, index: number): ChartTileSet {
     return layer;
   });
   if (layers.length === 0) fail(`tileSets[${index}].layers must not be empty`);
+  const cellName = tileSet.cellName === undefined && cells.length === 1
+    ? cells[0]?.name
+    : nonEmptyString(tileSet.cellName, `tileSets[${index}].cellName`);
+  if (cellName === undefined || !cells.some((cell) => cell.name === cellName)) {
+    fail(`tileSets[${index}].cellName does not identify a manifest cell`);
+  }
 
   return {
     id: nonEmptyString(tileSet.id, `tileSets[${index}].id`),
+    cellName,
     format,
     url: nonEmptyString(tileSet.url, `tileSets[${index}].url`),
     minZoom,

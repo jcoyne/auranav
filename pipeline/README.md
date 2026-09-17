@@ -1,7 +1,7 @@
 # Chartplotter preprocessing pipeline
 
-This Node/TypeScript project inspects NOAA S-57 exchange sets, converts one
-extracted cell into PMTiles, and validates the manifest consumed by the web app.
+This Node/TypeScript project inspects NOAA S-57 exchange sets, converts extracted
+cells into PMTiles, and validates the manifest consumed by the web app.
 
 ## Requirements
 
@@ -77,6 +77,31 @@ is published only after all checks pass. Coverage bounds come from `M_COVR`.
 The manifest preserves edition, update number and dates, compilation scale,
 vertical and sounding datums, source URL, and retrieval time.
 
+## Convert an extracted exchange set
+
+The batch command accepts an already extracted exchange-set directory, converts
+its valid cells in inventory order, and publishes one top-level manifest with a
+separate PMTiles tile set for each cell:
+
+```sh
+npm run cli -- convert-exchange-set \
+  ../data/source/WI_ENCs/ENC_ROOT \
+  --output ../data/packages/wisconsin \
+  --package-id wisconsin-enc \
+  --name "Wisconsin NOAA ENCs" \
+  --source-url https://charts.noaa.gov/ENCs/WI_ENCs.zip \
+  --retrieved-at 2026-09-17T12:00:00Z \
+  --user-agreement ../data/source/WI_ENCs/ENC_ROOT/USERAGREEMENT.TXT
+```
+
+`--limit N` converts only the first N cells in sorted inventory order and is
+useful for smoke tests. The final output directory is renamed into place only
+after every selected cell converts and the combined manifest validates. A
+failure removes all staged output. The command currently requires an extracted
+directory; ZIP input remains supported by `inventory` only. S-57 cells whose
+edition is `0` are cancellation records and are intentionally omitted from the
+published package.
+
 ## Validate a package manifest
 
 ```sh
@@ -95,7 +120,6 @@ and are not extracted chart metadata or navigation-grade data.
 - `npm run build` compiles the CLI into `dist/`.
 - `npm run check` runs type checking, tests, and example manifest validation.
 
-This remains a one-cell processing spike. Multi-cell overlap resolution,
-usage-band selection, full-Wisconsin packaging, and automated NOAA refreshes
-are later milestones. Successful conversion does not establish
-navigation-grade correctness.
+Multi-cell packaging is implemented, while web display selection across
+overlapping usage bands and automated NOAA refreshes remain later work.
+Successful conversion does not establish navigation-grade correctness.

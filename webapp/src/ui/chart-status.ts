@@ -55,13 +55,14 @@ export function renderPackageChartStatus(
   heading.append(name, pill);
 
   const issueDates = manifest.cells.map((cell) => cell.issueDate).sort();
-  const scales = [...new Set(manifest.cells.map((cell) => cell.compilationScale))]
-    .sort((left, right) => left - right)
-    .map((scale) => `1:${scale.toLocaleString()}`)
-    .join(", ");
-  const editions = manifest.cells
-    .map((cell) => `${cell.name} ed. ${cell.edition}, update ${cell.updateNumber}`)
-    .join("; ");
+  const scaleValues = [...new Set(manifest.cells.map((cell) => cell.compilationScale))]
+    .sort((left, right) => left - right);
+  const scales = scaleValues.length <= 4
+    ? scaleValues.map(formatScale).join(", ")
+    : `${scaleValues.length} compilation scales (${formatScale(scaleValues[0] ?? 0)}–${formatScale(scaleValues.at(-1) ?? 0)})`;
+  const editions = manifest.cells.length <= 3
+    ? manifest.cells.map((cell) => `${cell.name} ed. ${cell.edition}, update ${cell.updateNumber}`).join("; ")
+    : `${manifest.cells.length} cells (edition and update metadata retained per cell)`;
   const list = document.createElement("dl");
   addDetail(list, "Source", `${manifest.source.publisher} · ${manifest.source.product}`);
   addDetail(list, "Cells", editions);
@@ -78,6 +79,10 @@ export function renderPackageChartStatus(
   const note = document.createElement("p");
   note.append("Simplified portrayal for informational use. ", agreement);
   container.append(heading, list, note);
+}
+
+function formatScale(scale: number): string {
+  return `1:${scale.toLocaleString()}`;
 }
 
 function addDetail(list: HTMLDListElement, term: string, description: string): void {

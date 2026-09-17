@@ -104,4 +104,9 @@ describe("parseMetadata", () => {
     expect(() => parseMetadata(metadata({ DSPM_CSCL: undefined }), summaries())).toThrow("DSPM_CSCL");
     expect(() => parseMetadata(metadata({ DSPM_DUNI: 2 }), summaries())).toThrow("schema v1 requires metres");
   });
+
+  it("identifies edition zero as a cancelled ENC cell", () => {
+    expect(() => parseMetadata(metadata({ DSID_EDTN: "0" }), summaries()))
+      .toThrow("ENC cell US4WI1DP is cancelled (edition 0)");
+  });
 });

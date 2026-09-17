@@ -39,6 +39,14 @@ export interface CellMetadata {
   readonly soundingDatum: string;
 }
 
+export class CancelledCellError extends Error {
+  override readonly name = "CancelledCellError";
+
+  constructor(cellName: string) {
+    super(`ENC cell ${cellName} is cancelled (edition 0)`);
+  }
+}
+
 interface OgrLayerSummary {
   readonly name?: unknown;
   readonly featureCount?: unknown;
@@ -165,9 +173,11 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
   const depthUnit = requireInteger(properties, "DSPM_DUNI");
   if (depthUnit !== 1) throw new Error(`Unsupported S-57 depth unit code ${depthUnit}; schema v1 requires metres`);
 
+  const edition = requireNonnegativeIntegerString(properties, "DSID_EDTN");
+  if (edition === 0) throw new CancelledCellError(cellName);
   const cell: CellMetadata = {
     name: cellName,
-    edition: requirePositiveIntegerString(properties, "DSID_EDTN"),
+    edition,
     updateNumber: requireNonnegativeIntegerString(properties, "DSID_UPDN"),
     issueDate: parseS57Date(requireString(properties, "DSID_ISDT"), "DSID_ISDT"),
     updateApplicationDate: parseS57Date(requireString(properties, "DSID_UADT"), "DSID_UADT"),
@@ -297,6 +307,7 @@ function createManifest(
     tileSets: [
       {
         id: `${cell.name.toLowerCase()}-chart`,
+        cellName: cell.name,
         format: "pmtiles",
         url: `./${tileFilename}`,
         minZoom: options.minZoom ?? 0,
@@ -388,12 +399,6 @@ function requireInteger(record: Record<string, unknown>, field: string): number 
 function requirePositiveInteger(record: Record<string, unknown>, field: string): number {
   const value = requireInteger(record, field);
   if (value < 1) throw new Error(`Required S-57 metadata ${field} must be positive`);
-  return value;
-}
-
-function requirePositiveIntegerString(record: Record<string, unknown>, field: string): number {
-  const value = Number(requireString(record, field));
-  if (!Number.isInteger(value) || value < 1) throw new Error(`Required S-57 metadata ${field} must be a positive integer`);
   return value;
 }
 
