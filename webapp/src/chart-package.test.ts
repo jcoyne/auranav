@@ -94,4 +94,13 @@ describe("parseChartPackageManifest", () => {
     });
     expect(parsed.tileSets[0]?.layers[0]).toBe("coverage");
   });
+
+  it("accepts an optional navigation-light source layer", () => {
+    const tileSet = validManifest.tileSets[0];
+    const parsed = parseChartPackageManifest({
+      ...validManifest,
+      tileSets: [{ ...tileSet, layers: [...(tileSet?.layers ?? []), "light"] }],
+    });
+    expect(parsed.tileSets[0]?.layers).toContain("light");
+  });
 });

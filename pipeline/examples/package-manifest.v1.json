@@ -24,7 +24,7 @@
       "url": "./wisconsin-spike.pmtiles",
       "minZoom": 4,
       "maxZoom": 16,
-      "layers": ["coverage", "coastline", "depth-area", "depth-contour", "sounding"]
+      "layers": ["coverage", "coastline", "depth-area", "depth-contour", "sounding", "light"]
     }
   ],
   "cells": [

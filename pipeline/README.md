@@ -65,7 +65,14 @@ npm run cli -- convert-cell \
 
 The command applies updates through GDAL, splits multipoint `SOUNDG` features,
 adds each sounding's `DEPTH`, and stages whichever of `COALNE`, `DEPARE`,
-`DEPCNT`, and `SOUNDG` are present under stable names in a temporary GeoPackage.
+`DEPCNT`, `SOUNDG`, and `LIGHTS` are present under stable names in a temporary
+GeoPackage. The stable `light` layer preserves the S-57 light attributes as
+`color`, `characteristic`, `signalGroup`, `periodSeconds`, `heightMetres`,
+`nominalRangeNm`, `category`, and `status`. Enumeration and list values remain
+the raw S-57 codes so the browser can apply chart-style abbreviations without
+discarding source information. Sector and directional context is retained as
+`sectorStart`, `sectorEnd`, `orientation`, and `heightDatum` even when it is not
+part of the short on-chart label.
 It also writes the cell's exact positive `M_COVR` geometry as the stable
 `coverage` layer. S-57 `CATCOV=2` polygons identify areas where coverage is not
 available and are deliberately excluded; NOAA's positive `CATCOV=1` geometry
@@ -76,7 +83,7 @@ GDAL's native PMTiles driver creates the archive. The final directory also conta
 
 Conversion refuses incomplete update sequences, an applied DSID update number
 that differs from the highest update file, empty or malformed present layers,
-missing `M_COVR` coverage, a cell with no supported chart layers, absent DSID/DSPM metadata, non-metre source depths, an
+missing `M_COVR` coverage, a cell with no supported chart layers, absent DSID/DSPM metadata, non-metre source depths, non-metre light heights, an
 invalid generated PMTiles layer set, and an existing output directory. Output
 is published only after all checks pass. Coverage bounds are calculated from
 the same positive `M_COVR` features written to the archive, rather than the

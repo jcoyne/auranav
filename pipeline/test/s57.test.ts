@@ -21,6 +21,7 @@ const properties = {
   DSPM_SDAT: 25,
   DSPM_CSCL: 90000,
   DSPM_DUNI: 1,
+  DSPM_HUNI: 1,
 };
 
 function metadata(overrides: Record<string, unknown> = {}): string {
@@ -30,13 +31,14 @@ function metadata(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-function summaries(overrides: Partial<Record<"M_COVR" | "COALNE" | "DEPARE" | "DEPCNT" | "SOUNDG", object>> = {}) {
+function summaries(overrides: Partial<Record<"M_COVR" | "COALNE" | "DEPARE" | "DEPCNT" | "SOUNDG" | "LIGHTS", object>> = {}) {
   return new Map([
     ["M_COVR" as const, JSON.stringify(overrides.M_COVR ?? coverageSummary())],
     ["COALNE" as const, JSON.stringify(overrides.COALNE ?? summary("COALNE", 27, [-87.9, 42.9, -87.6, 43.2]))],
     ["DEPARE" as const, JSON.stringify(overrides.DEPARE ?? summary("DEPARE", 33, [-87.85, 42.95, -87.65, 43.15]))],
     ["DEPCNT" as const, JSON.stringify(overrides.DEPCNT ?? summary("DEPCNT", 36, [-87.8, 43, -87.7, 43.1]))],
     ["SOUNDG" as const, JSON.stringify(overrides.SOUNDG ?? summary("SOUNDG", 335, [-87.82, 42.98, -87.68, 43.12]))],
+    ["LIGHTS" as const, JSON.stringify(overrides.LIGHTS ?? summary("LIGHTS", 12, [-87.81, 42.99, -87.69, 43.11]))],
   ]);
 }
 
@@ -103,6 +105,33 @@ describe("S-57 commands", () => {
     expect(command.args).toContain("SELECT DEPTH AS depth, 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale FROM SOUNDG");
   });
 
+  it("extracts navigation-light attributes under stable property names", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const command = extractionCommand(baseCell, "layers.gpkg", {
+      source: "LIGHTS",
+      outputLayer: "light",
+      properties: [
+        "COLOUR AS color",
+        "LITCHR AS characteristic",
+        "SIGGRP AS signalGroup",
+        "SIGPER AS periodSeconds",
+        "HEIGHT AS heightMetres",
+        "VALNMR AS nominalRangeNm",
+        "SECTR1 AS sectorStart",
+        "SECTR2 AS sectorEnd",
+        "ORIENT AS orientation",
+        "VERDAT AS heightDatum",
+        "CATLIT AS category",
+        "STATUS AS status",
+      ],
+    }, parsed, true);
+
+    expect(command.args).toContain("light");
+    expect(command.args).toContain(
+      "SELECT COLOUR AS color, LITCHR AS characteristic, SIGGRP AS signalGroup, SIGPER AS periodSeconds, HEIGHT AS heightMetres, VALNMR AS nominalRangeNm, SECTR1 AS sectorStart, SECTR2 AS sectorEnd, ORIENT AS orientation, VERDAT AS heightDatum, CATLIT AS category, STATUS AS status, 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale FROM LIGHTS",
+    );
+  });
+
   it("extracts only positive M_COVR polygons as stable coverage", () => {
     const parsed = parseMetadata(metadata(), summaries()).cell;
     const command = extractionCommand(baseCell, "layers.gpkg", {
@@ -139,22 +168,27 @@ describe("parseMetadata", () => {
         soundingDatum: "International Great Lakes Datum 1985",
       },
       bounds: [-87.9, 42.9, -87.6, 43.2],
-      layers: ["COALNE", "DEPARE", "DEPCNT", "SOUNDG"],
+      layers: ["COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS"],
     });
   });
 
   it("allows absent supported layers but rejects a present empty layer", () => {
     const missing = summaries();
     missing.delete("DEPCNT");
+    missing.delete("LIGHTS");
     expect(parseMetadata(metadata(), missing).layers).toEqual(["COALNE", "DEPARE", "SOUNDG"]);
     expect(() => parseMetadata(metadata(), summaries({ SOUNDG: summary("SOUNDG", 0, [-87, 43, -86, 44]) }))).toThrow(
       "Required S-57 layer SOUNDG contains no features",
+    );
+    expect(() => parseMetadata(metadata(), summaries({ LIGHTS: summary("LIGHTS", 0, [-87, 43, -86, 44]) }))).toThrow(
+      "Required S-57 layer LIGHTS contains no features",
     );
   });
 
   it("rejects absent metadata and non-metre depths", () => {
     expect(() => parseMetadata(metadata({ DSPM_CSCL: undefined }), summaries())).toThrow("DSPM_CSCL");
     expect(() => parseMetadata(metadata({ DSPM_DUNI: 2 }), summaries())).toThrow("schema v1 requires metres");
+    expect(() => parseMetadata(metadata({ DSPM_HUNI: 2 }), summaries())).toThrow("light heightMetres requires metres");
   });
 
   it("identifies edition zero as a cancelled ENC cell", () => {

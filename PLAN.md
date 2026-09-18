@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build an installable, offline-capable web application for recreational and informational viewing of NOAA Electronic Navigational Charts in Wisconsin. The application displays shoreline geometry, depth areas and contours, soundings, and the device's current GPS position.
+Build an installable, offline-capable web application for recreational and informational viewing of NOAA Electronic Navigational Charts in Wisconsin. The application displays shoreline geometry, depth areas and contours, soundings, navigation lights, and the device's current GPS position.
 
 The application is not an ECDIS and is not certified for navigation.
 
@@ -46,7 +46,7 @@ Acceptance: each project documents its local commands; the manifest example vali
 
 - [x] Download or accept one NOAA S-57 cell and its sequential updates.
 - [x] Verify update ordering and reject missing update sequences.
-- [x] Extract coastline (`COALNE`), soundings (`SOUNDG`), depth contours (`DEPCNT`), and depth areas (`DEPARE`).
+- [x] Extract coastline (`COALNE`), soundings (`SOUNDG`), depth contours (`DEPCNT`), depth areas (`DEPARE`), and navigation lights (`LIGHTS`).
 - [x] Produce a local vector-tile package and conforming manifest.
 
 Acceptance: a repeatable command transforms a pinned fixture or downloaded cell into a package that the webapp can open; provenance and update metadata survive the conversion.
@@ -58,6 +58,7 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 - [x] Show an overscale warning and detect when the map center leaves chart coverage.
 - [x] Select a usage band by display scale and retain coarser fallback coverage beneath it.
 - [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
+- [x] Render navigation lights with conventional characteristic, color, period, height, and range labels.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.

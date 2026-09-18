@@ -1,4 +1,4 @@
-export const CHART_LAYERS = ["coastline", "depth-area", "depth-contour", "sounding"] as const;
+export const CHART_LAYERS = ["coastline", "depth-area", "depth-contour", "sounding", "light"] as const;
 export const TILE_LAYERS = ["coverage", ...CHART_LAYERS] as const;
 
 export type ChartLayer = (typeof CHART_LAYERS)[number];

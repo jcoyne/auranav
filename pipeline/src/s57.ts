@@ -4,9 +4,9 @@ import { inspectEntries } from "./inventory.js";
 import { validateManifest } from "./manifest.js";
 import { type Command, type CommandRunner, runCommand } from "./process.js";
 
-const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG"] as const;
+const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS"] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
-const LAYER_NAMES = ["coverage", "coastline", "depth-area", "depth-contour", "sounding"] as const;
+const LAYER_NAMES = ["coverage", "coastline", "depth-area", "depth-contour", "sounding", "light"] as const;
 
 type RequiredLayer = (typeof REQUIRED_LAYERS)[number];
 type InspectedLayer = (typeof INSPECTED_LAYERS)[number];
@@ -80,6 +80,24 @@ const EXTRACTS: readonly ExtractSpec[] = [
   { source: "DEPARE", outputLayer: "depth-area", properties: ["DRVAL1 AS minimumDepth", "DRVAL2 AS maximumDepth"] },
   { source: "DEPCNT", outputLayer: "depth-contour", properties: ["VALDCO AS depth"] },
   { source: "SOUNDG", outputLayer: "sounding", properties: ["DEPTH AS depth"] },
+  {
+    source: "LIGHTS",
+    outputLayer: "light",
+    properties: [
+      "COLOUR AS color",
+      "LITCHR AS characteristic",
+      "SIGGRP AS signalGroup",
+      "SIGPER AS periodSeconds",
+      "HEIGHT AS heightMetres",
+      "VALNMR AS nominalRangeNm",
+      "SECTR1 AS sectorStart",
+      "SECTR2 AS sectorEnd",
+      "ORIENT AS orientation",
+      "VERDAT AS heightDatum",
+      "CATLIT AS category",
+      "STATUS AS status",
+    ],
+  },
 ];
 
 export function metadataCommand(baseCell: string, ogrinfo = "ogrinfo"): Command {
@@ -233,6 +251,12 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
     layers.push(requiredLayer);
   }
   if (layers.length === 0) throw new Error("S-57 cell contains none of the supported chart layers");
+  if (layers.includes("LIGHTS")) {
+    const heightUnit = requireInteger(properties, "DSPM_HUNI");
+    if (heightUnit !== 1) {
+      throw new Error(`Unsupported S-57 height unit code ${heightUnit}; light heightMetres requires metres`);
+    }
+  }
   return { cell, bounds, layers };
 }
 

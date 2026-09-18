@@ -1,6 +1,6 @@
 import type { ChartPackageManifest, DepthUnit, TileLayer } from "../chart-package";
 import { resolvePackageAssetUrl } from "../chart-package-url";
-import type { Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
+import type { ExpressionSpecification, Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
 import { addProtocol, Popup } from "maplibre-gl";
 import { PMTiles, Protocol } from "pmtiles";
 import {
@@ -10,6 +10,7 @@ import {
   demoSoundings,
 } from "./demo-chart";
 import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
+import { formatLightDetailsList } from "./light";
 
 export const DEMO_SOURCE_IDS = {
   coastline: "demo-coastline",
@@ -221,7 +222,117 @@ function addVectorLayers(
     layerIds.push(labelLayerId);
     addSoundingInteraction(map, hitLayerId, displayUnit);
   }
+  if (layers.includes("light")) {
+    const hitLayerId = `chart-light-hit-${index}`;
+    map.addLayer({
+      id: hitLayerId,
+      type: "circle",
+      source: sourceId,
+      "source-layer": "light",
+      minzoom: 8,
+      paint: {
+        "circle-color": "rgba(0, 0, 0, 0)",
+        "circle-radius": 16,
+      },
+    }, beforeId);
+    layerIds.push(hitLayerId);
+
+    const symbolLayerId = `chart-light-symbol-${index}`;
+    map.addLayer({
+      id: symbolLayerId,
+      type: "symbol",
+      source: sourceId,
+      "source-layer": "light",
+      minzoom: 8,
+      layout: {
+        // Keep the magenta light flare visible even when its descriptive
+        // label collides with another chart annotation.
+        "text-field": "✦",
+        "text-font": ["Open Sans Regular"],
+        "text-size": 16,
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+      },
+      paint: {
+        "text-color": "#b00078",
+        "text-halo-color": "#f5fbfc",
+        "text-halo-width": 1.5,
+      },
+    }, beforeId);
+    layerIds.push(symbolLayerId);
+
+    const labelLayerId = `chart-light-label-${index}`;
+    map.addLayer({
+      id: labelLayerId,
+      type: "symbol",
+      source: sourceId,
+      "source-layer": "light",
+      minzoom: 8,
+      layout: {
+        "text-field": lightLabelExpression(),
+        "text-font": ["Open Sans Regular"],
+        "text-size": 12,
+        "text-variable-anchor": ["left", "right", "top", "bottom", "top-left", "top-right"],
+        "text-radial-offset": 1,
+        "text-allow-overlap": false,
+        "text-padding": 4,
+      },
+      paint: {
+        "text-color": "#b00078",
+        "text-halo-color": "#f5fbfc",
+        "text-halo-width": 1.5,
+      },
+    }, beforeId);
+    layerIds.push(labelLayerId);
+    addLightInteraction(map, hitLayerId);
+  }
   return layerIds;
+}
+
+function lightLabelExpression(): ExpressionSpecification {
+  const optionalNumber = (property: string, suffix: string): ExpressionSpecification => [
+    "case",
+    ["==", ["typeof", ["get", property]], "number"],
+    ["concat", " ", ["number-format", ["get", property], { "max-fraction-digits": 1 }], suffix],
+    "",
+  ];
+  return [
+    "concat",
+    [
+      "match", ["to-string", ["get", "characteristic"]],
+      "1", "F", "2", "Fl", "3", "LFl", "4", "Q", "5", "VQ", "6", "UQ",
+      "7", "Iso", "8", "Oc", "9", "IQ", "10", "IVQ", "11", "IUQ", "12", "Mo",
+      "13", "F.Fl", "14", "F.LFl", "15", "Oc.Fl", "16", "Oc.LFl", "17", "Al.Oc",
+      "18", "Al.LFl", "19", "Al.Fl", "20", "Al.Gr", "21", "2F Vert", "22", "2F Hor",
+      "23", "3F Vert", "24", "3F Hor", "25", "Q+LFl", "26", "VQ+LFl",
+      "27", "UQ+LFl", "28", "Al", "29", "F.Al.Fl", "Lt",
+    ],
+    [
+      "match", ["to-string", ["get", "signalGroup"]],
+      "", "", "()", "", "( )", "", "(1)", "", "1", "",
+      ["to-string", ["get", "signalGroup"]],
+    ],
+    [
+      "case",
+      ["has", "color"],
+      ["concat", " ", [
+        "match", ["downcase", ["to-string", ["get", "color"]]],
+        "white", "W", "red", "R", "green", "G", "blue", "Bu", "yellow", "Y",
+        "amber", "Am", "violet", "Vi", "orange", "Or",
+        "1", "W", "3", "R", "4", "G", "5", "Bu", "6", "Y", "9", "Am", "10", "Vi", "11", "Or",
+        "[ \"1\" ]", "W", "[ \"3\" ]", "R", "[ \"4\" ]", "G", "[ \"5\" ]", "Bu",
+        "[ \"6\" ]", "Y", "[ \"9\" ]", "Am", "[ \"10\" ]", "Vi", "[ \"11\" ]", "Or",
+        "[\"1\"]", "W", "[\"3\"]", "R", "[\"4\"]", "G", "[\"5\"]", "Bu",
+        "[\"6\"]", "Y", "[\"9\"]", "Am", "[\"10\"]", "Vi", "[\"11\"]", "Or",
+        "[ \"1\", \"3\" ]", "W R", "[ \"1\", \"4\" ]", "W G",
+        ["to-string", ["get", "color"]],
+      ]],
+      "",
+    ],
+    optionalNumber("periodSeconds", "s"),
+    optionalNumber("heightMetres", "m"),
+    optionalNumber("nominalRangeNm", "M"),
+  ];
 }
 
 function positionLayerId(map: MapLibreMap): string | undefined {
@@ -317,6 +428,30 @@ function addSoundingInteraction(map: MapLibreMap, layerId: string, displayUnit: 
     new Popup({ closeButton: true, focusAfterOpen: true })
       .setLngLat(event.lngLat)
       .setText(`${formatDepth(convertedDepth)} ${unitLabel(displayUnit)}`)
+      .addTo(map);
+  });
+}
+
+function addLightInteraction(map: MapLibreMap, layerId: string): void {
+  map.on("mouseenter", layerId, () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseleave", layerId, () => {
+    map.getCanvas().style.cursor = "";
+  });
+  map.on("click", layerId, (event: MapLayerMouseEvent) => {
+    // Coarser fallback cells remain rendered beneath detailed coverage. Only
+    // the uppermost light hit layer should respond where those cells overlap.
+    const topLightLayerId = map.queryRenderedFeatures(event.point)
+      .find((feature) => feature.layer.id.startsWith("chart-light-hit-"))?.layer.id;
+    if (topLightLayerId !== undefined && topLightLayerId !== layerId) return;
+    const properties = (event.features ?? []).flatMap((feature) => (
+      feature.properties === null ? [] : [feature.properties]
+    ));
+    if (properties.length === 0) return;
+    new Popup({ closeButton: true, focusAfterOpen: true })
+      .setLngLat(event.lngLat)
+      .setText(formatLightDetailsList(properties))
       .addTo(map);
   });
 }

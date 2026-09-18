@@ -131,6 +131,48 @@ describe("package chart layers", () => {
     expect(map.addSource).toHaveBeenCalledWith("chart-0", expect.any(Object));
     expect(map.isSourceLoaded).toHaveBeenCalledWith("chart-0");
   });
+
+  it("renders an optional navigation-light layer with a chart label and touch target", () => {
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
+      getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["coastline", "light"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-light-hit-0",
+      type: "circle",
+      "source-layer": "light",
+      paint: expect.objectContaining({ "circle-radius": 16 }),
+    }), undefined);
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-light-symbol-0",
+      type: "symbol",
+      "source-layer": "light",
+      layout: expect.objectContaining({
+        "text-field": "✦",
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+      }),
+      paint: expect.objectContaining({ "text-color": "#b00078" }),
+    }), undefined);
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-light-label-0",
+      type: "symbol",
+      "source-layer": "light",
+      layout: expect.objectContaining({
+        "text-variable-anchor": ["left", "right", "top", "bottom", "top-left", "top-right"],
+        "text-radial-offset": 1,
+        "text-allow-overlap": false,
+      }),
+    }), undefined);
+    expect(map.on).toHaveBeenCalledWith("click", "chart-light-hit-0", expect.any(Function));
+  });
 });
 
 function manifest(): ChartPackageManifest {

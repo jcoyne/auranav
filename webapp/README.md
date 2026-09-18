@@ -22,6 +22,8 @@ Configured manifests are validated defensively before use. A bad or unavailable 
 
 Multi-cell manifests must associate every tile set with a `cellName`. The viewer selects the usage band whose compilation scale is closest to the current display scale and lazily adds intersecting cells from that band and the coarser fallback bands. A tile set may advertise a `coverage` vector layer containing its exact `M_COVR` geometry. The viewer draws that opaque mask immediately before the cell's chart content, from coarse to detailed, so detail replaces broad coverage without leaving blank areas outside the detailed cell. Coverage and overscale status use the rendered coverage geometry at the map center after tiles settle. Older packages without `coverage` remain readable using bounds-based status, but cannot mask overlap precisely.
 
+Packages may also advertise a `light` point layer. At chart zooms the viewer renders navigation lights in magenta with conventional concise labels such as `Fl(2) R 4s 10m 5M` (characteristic and group, color, period, height in metres, and nominal range in nautical miles). Clicking or tapping the generous invisible hit target opens an expanded text description. Missing light attributes are omitted, and older packages without the layer remain compatible.
+
 Sounding labels currently use MapLibre's public demonstration glyph endpoint. M4 must package those glyphs with the application shell before offline chart-display acceptance can pass.
 
 ## Commands
