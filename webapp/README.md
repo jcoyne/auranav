@@ -1,4 +1,4 @@
-# Chartplotter web application
+# AuraNav web application
 
 Framework-free TypeScript user interface for viewing chart packages produced by `pipeline/`. MapLibre GL JS supplies map rendering and its standard pointer, wheel, keyboard, and touch gestures.
 

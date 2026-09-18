@@ -1,4 +1,4 @@
-# Chartplotter contributor instructions
+# AuraNav contributor instructions
 
 ## Product boundaries
 

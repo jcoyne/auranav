@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chartplotter.local/schema/tile-metadata.schema.json",
-  "title": "Chartplotter chart package manifest",
+  "title": "AuraNav chart package manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [

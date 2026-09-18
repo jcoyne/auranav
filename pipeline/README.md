@@ -1,4 +1,4 @@
-# Chartplotter preprocessing pipeline
+# AuraNav preprocessing pipeline
 
 This Node/TypeScript project inspects NOAA S-57 exchange sets, converts extracted
 cells into PMTiles, and validates the manifest consumed by the web app.

@@ -1,4 +1,4 @@
-# Chartplotter implementation plan
+# AuraNav implementation plan
 
 ## Goal
 

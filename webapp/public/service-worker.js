@@ -1,4 +1,4 @@
-const SHELL_CACHE = "chartplotter-shell-v2";
+const SHELL_CACHE = "chartplotter-shell-v3";
 const BASE = new URL("./", self.registration.scope);
 const STATIC_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./app-icon-192.png", "./app-icon-512.png", "./fonts/Noto%20Sans%20Regular/0-255.pbf", "./fonts/Noto%20Sans%20Regular/9984-10239.pbf", "./fonts/OFL.txt", "./fonts/README.txt"];
 

@@ -1,6 +1,6 @@
-# Chartplotter
+# AuraNav
 
-Chartplotter is an installable, offline-capable web application for viewing NOAA Electronic Navigational Charts around Wisconsin, including depths, shoreline geometry, and navigation lights. It is intended for recreational and informational use and is not a certified Electronic Chart Display and Information System.
+AuraNav is an installable, offline-capable web application for viewing NOAA Electronic Navigational Charts around Wisconsin, including depths, shoreline geometry, and navigation lights. It is intended for recreational and informational use and is not a certified Electronic Chart Display and Information System.
 
 The repository contains two independently runnable projects:
 

@@ -1,6 +1,6 @@
 {
-  "name": "Wisconsin Chartplotter",
-  "short_name": "Chartplotter",
+  "name": "AuraNav — Wisconsin Nautical Charts",
+  "short_name": "AuraNav",
   "description": "Offline recreational viewer for NOAA electronic navigation charts.",
   "start_url": "./",
   "display": "standalone",
