@@ -23,17 +23,22 @@ const approaches = [
 const harbour = cell("US5AAAAA", 5, 20_000, [-88.1, 42.9, -87.8, 43.2]);
 
 describe("selectChartCells", () => {
-  it("selects a single appropriate usage band for the current display scale", () => {
+  it("selects intersecting fallback bands through the appropriate usage band", () => {
     const cells = [general, ...approaches, harbour];
-    expect(selectChartCells(cells, [-90, 42, -86, 44], 1_000_000).map((item) => item.name))
+    expect(selectChartCells(cells, [-90, 42, -86, 44], 1_000_000, true).map((item) => item.name))
       .toEqual(["US2AAAAA"]);
-    expect(selectChartCells(cells, [-88.5, 42, -86, 44], 100_000).map((item) => item.name))
-      .toEqual(["US4AAAAA", "US4BBBBB"]);
-    expect(selectChartCells(cells, [-88, 42.95, -87.85, 43.1], 25_000).map((item) => item.name))
-      .toEqual(["US5AAAAA"]);
+    expect(selectChartCells(cells, [-88.5, 42, -86, 44], 100_000, true).map((item) => item.name))
+      .toEqual(["US2AAAAA", "US4AAAAA", "US4BBBBB"]);
+    expect(selectChartCells(cells, [-88, 42.95, -87.85, 43.1], 25_000, true).map((item) => item.name))
+      .toEqual(["US2AAAAA", "US4AAAAA", "US5AAAAA"]);
   });
 
   it("does not select cells outside the viewport", () => {
     expect(selectChartCells([general, harbour], [-80, 40, -79, 41], 20_000)).toEqual([]);
+  });
+
+  it("retains single-band selection for packages without coverage masks", () => {
+    expect(selectChartCells([general, ...approaches, harbour], [-88, 42.95, -87.85, 43.1], 25_000)
+      .map((item) => item.name)).toEqual(["US5AAAAA"]);
   });
 });

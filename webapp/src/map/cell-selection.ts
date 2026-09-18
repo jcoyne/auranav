@@ -4,6 +4,7 @@ export function selectChartCells(
   cells: readonly ChartCell[],
   viewport: Bounds,
   displayScale: number,
+  includeFallbackBands = false,
 ): ChartCell[] {
   const candidates = cells.filter((cell) => intersects(cell.bounds, viewport));
   if (candidates.length === 0) return [];
@@ -22,8 +23,10 @@ export function selectChartCells(
     .sort((left, right) => left.score - right.score || right.usageBand - left.usageBand)[0]?.usageBand;
 
   return candidates
-    .filter((cell) => cell.usageBand === selectedBand)
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .filter((cell) => selectedBand !== undefined && (
+      cell.usageBand === selectedBand || (includeFallbackBands && cell.usageBand < selectedBand)
+    ))
+    .sort((left, right) => left.usageBand - right.usageBand || left.name.localeCompare(right.name));
 }
 
 function scaleScore(cells: readonly ChartCell[], displayScale: number): number {

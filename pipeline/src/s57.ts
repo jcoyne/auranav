@@ -6,7 +6,7 @@ import { type Command, type CommandRunner, runCommand } from "./process.js";
 
 const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG"] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
-const LAYER_NAMES = ["coastline", "depth-area", "depth-contour", "sounding"] as const;
+const LAYER_NAMES = ["coverage", "coastline", "depth-area", "depth-contour", "sounding"] as const;
 
 type RequiredLayer = (typeof REQUIRED_LAYERS)[number];
 type InspectedLayer = (typeof INSPECTED_LAYERS)[number];
@@ -51,7 +51,7 @@ interface OgrLayerSummary {
   readonly name?: unknown;
   readonly featureCount?: unknown;
   readonly geometryFields?: readonly { readonly extent?: unknown }[];
-  readonly features?: readonly { readonly properties?: unknown }[];
+  readonly features?: readonly { readonly properties?: unknown; readonly geometry?: unknown }[];
 }
 
 interface OgrInfoDocument {
@@ -66,12 +66,16 @@ interface MetadataResult {
 }
 
 interface ExtractSpec {
-  readonly source: RequiredLayer;
+  readonly source: InspectedLayer;
   readonly outputLayer: (typeof LAYER_NAMES)[number];
   readonly properties: readonly string[];
+  readonly where?: string;
 }
 
 const EXTRACTS: readonly ExtractSpec[] = [
+  // CATCOV=2 describes areas where coverage is explicitly unavailable. Those
+  // polygons are not part of the cell's positive coverage mask.
+  { source: "M_COVR", outputLayer: "coverage", properties: [], where: "CATCOV = 1" },
   { source: "COALNE", outputLayer: "coastline", properties: [] },
   { source: "DEPARE", outputLayer: "depth-area", properties: ["DRVAL1 AS minimumDepth", "DRVAL2 AS maximumDepth"] },
   { source: "DEPCNT", outputLayer: "depth-contour", properties: ["VALDCO AS depth"] },
@@ -100,6 +104,13 @@ export function datasetSummaryCommand(baseCell: string, ogrinfo = "ogrinfo"): Co
       "ADD_SOUNDG_DEPTH=ON",
       path.resolve(baseCell),
     ],
+  };
+}
+
+export function coverageCommand(baseCell: string, ogrinfo = "ogrinfo"): Command {
+  return {
+    executable: ogrinfo,
+    args: ["-ro", "-json", "-features", "-oo", "UPDATES=APPLY", "-where", "CATCOV = 1", path.resolve(baseCell), "M_COVR"],
   };
 }
 
@@ -147,7 +158,7 @@ export function extractionCommand(
       "-dialect",
       "OGRSQL",
       "-sql",
-      `SELECT ${properties.join(", ")} FROM ${spec.source}`,
+      `SELECT ${properties.join(", ")} FROM ${spec.source}${spec.where === undefined ? "" : ` WHERE ${spec.where}`}`,
       path.resolve(output),
       path.resolve(baseCell),
     ],
@@ -205,7 +216,9 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
   if (coverageLayer === undefined || !Number.isInteger(coverageLayer.featureCount) || Number(coverageLayer.featureCount) < 1) {
     throw new Error("Required S-57 layer M_COVR contains no coverage features");
   }
-  const bounds = parseBounds(coverageLayer.geometryFields?.[0]?.extent, "M_COVR");
+  const bounds = coverageLayer.features === undefined
+    ? parseBounds(coverageLayer.geometryFields?.[0]?.extent, "M_COVR")
+    : boundsFromFeatures(coverageLayer.features, "M_COVR");
   const layers: RequiredLayer[] = [];
   for (const requiredLayer of REQUIRED_LAYERS) {
     const rawSummary = summaries.get(requiredLayer);
@@ -231,7 +244,9 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
 
   const metadataResult = await runner(metadataCommand(baseCell, options.ogrinfo));
   const summaryResult = await runner(datasetSummaryCommand(baseCell, options.ogrinfo));
-  const summaries = parseLayerSummaries(summaryResult.stdout);
+  const coverageResult = await runner(coverageCommand(baseCell, options.ogrinfo));
+  const summaries = new Map(parseLayerSummaries(summaryResult.stdout));
+  summaries.set("M_COVR", coverageResult.stdout);
   const { cell, bounds, layers } = parseMetadata(metadataResult.stdout, summaries);
   const expectedName = path.basename(baseCell, path.extname(baseCell)).toUpperCase();
   if (cell.name !== expectedName) throw new Error(`DSID cell ${cell.name} does not match input filename ${expectedName}`);
@@ -254,7 +269,7 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
 
   try {
     const stagingDatabase = path.join(temporary, "layers.gpkg");
-    const extracts = EXTRACTS.filter((extract) => layers.includes(extract.source));
+    const extracts = EXTRACTS.filter((extract) => extract.source === "M_COVR" || layers.includes(extract.source));
     for (const [index, extract] of extracts.entries()) {
       await runner(extractionCommand(baseCell, stagingDatabase, extract, cell, index === 0, options.ogr2ogr));
     }
@@ -384,6 +399,39 @@ function parseBounds(value: unknown, layer: string): Bounds {
     throw new Error(`Required S-57 layer ${layer} has invalid geographic bounds`);
   }
   return [west, south, east, north];
+}
+
+function boundsFromFeatures(features: readonly { readonly geometry?: unknown }[], layer: string): Bounds {
+  let west = Number.POSITIVE_INFINITY;
+  let south = Number.POSITIVE_INFINITY;
+  let east = Number.NEGATIVE_INFINITY;
+  let north = Number.NEGATIVE_INFINITY;
+
+  const visit = (coordinates: unknown): void => {
+    if (!Array.isArray(coordinates)) throw new Error(`Required S-57 layer ${layer} has invalid geometry`);
+    if (
+      coordinates.length >= 2
+      && typeof coordinates[0] === "number"
+      && Number.isFinite(coordinates[0])
+      && typeof coordinates[1] === "number"
+      && Number.isFinite(coordinates[1])
+    ) {
+      west = Math.min(west, coordinates[0]);
+      south = Math.min(south, coordinates[1]);
+      east = Math.max(east, coordinates[0]);
+      north = Math.max(north, coordinates[1]);
+      return;
+    }
+    for (const child of coordinates) visit(child);
+  };
+
+  for (const feature of features) {
+    if (!isRecord(feature.geometry) || !("coordinates" in feature.geometry)) {
+      throw new Error(`Required S-57 layer ${layer} has invalid geometry`);
+    }
+    visit(feature.geometry.coordinates);
+  }
+  return parseBounds([west, south, east, north], layer);
 }
 
 function validatePackageSummary(text: string, expectedLayers: readonly (typeof LAYER_NAMES)[number][]): void {

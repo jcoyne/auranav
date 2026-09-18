@@ -20,7 +20,7 @@ Alternatively, set `VITE_CHART_MANIFEST_URL=/charts/manifest.json` at build time
 
 Configured manifests are validated defensively before use. A bad or unavailable configured package produces a visible error instead of silently displaying the synthetic preview.
 
-Multi-cell manifests must associate every tile set with a `cellName`. The viewer selects the usage band whose compilation scale is closest to the current display scale, lazily adds only intersecting cells, and hides cells from inactive bands. Selection currently uses cell bounding boxes; precise `M_COVR` clipping at same-band boundaries remains part of the full-Wisconsin refinement.
+Multi-cell manifests must associate every tile set with a `cellName`. The viewer selects the usage band whose compilation scale is closest to the current display scale and lazily adds intersecting cells from that band and the coarser fallback bands. A tile set may advertise a `coverage` vector layer containing its exact `M_COVR` geometry. The viewer draws that opaque mask immediately before the cell's chart content, from coarse to detailed, so detail replaces broad coverage without leaving blank areas outside the detailed cell. Coverage and overscale status use the rendered coverage geometry at the map center after tiles settle. Older packages without `coverage` remain readable using bounds-based status, but cannot mask overlap precisely.
 
 Sounding labels currently use MapLibre's public demonstration glyph endpoint. M4 must package those glyphs with the application shell before offline chart-display acceptance can pass.
 

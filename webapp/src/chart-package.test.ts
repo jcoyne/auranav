@@ -84,4 +84,14 @@ describe("parseChartPackageManifest", () => {
     });
     expect(parsed.tileSets[0]?.cellName).toBe("US4WI1DP");
   });
+
+  it("accepts an optional coverage mask source layer", () => {
+    const tileSet = validManifest.tileSets[0];
+    expect(tileSet).toBeDefined();
+    const parsed = parseChartPackageManifest({
+      ...validManifest,
+      tileSets: [{ ...tileSet, layers: ["coverage", ...(tileSet?.layers ?? [])] }],
+    });
+    expect(parsed.tileSets[0]?.layers[0]).toBe("coverage");
+  });
 });

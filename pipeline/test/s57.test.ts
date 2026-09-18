@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  coverageCommand,
   datasetSummaryCommand,
   extractionCommand,
   metadataCommand,
@@ -31,12 +32,28 @@ function metadata(overrides: Record<string, unknown> = {}): string {
 
 function summaries(overrides: Partial<Record<"M_COVR" | "COALNE" | "DEPARE" | "DEPCNT" | "SOUNDG", object>> = {}) {
   return new Map([
-    ["M_COVR" as const, JSON.stringify(overrides.M_COVR ?? summary("M_COVR", 1, [-87.9, 42.9, -87.6, 43.2]))],
+    ["M_COVR" as const, JSON.stringify(overrides.M_COVR ?? coverageSummary())],
     ["COALNE" as const, JSON.stringify(overrides.COALNE ?? summary("COALNE", 27, [-87.9, 42.9, -87.6, 43.2]))],
     ["DEPARE" as const, JSON.stringify(overrides.DEPARE ?? summary("DEPARE", 33, [-87.85, 42.95, -87.65, 43.15]))],
     ["DEPCNT" as const, JSON.stringify(overrides.DEPCNT ?? summary("DEPCNT", 36, [-87.8, 43, -87.7, 43.1]))],
     ["SOUNDG" as const, JSON.stringify(overrides.SOUNDG ?? summary("SOUNDG", 335, [-87.82, 42.98, -87.68, 43.12]))],
   ]);
+}
+
+function coverageSummary(): object {
+  return {
+    driverShortName: "S57",
+    layers: [{
+      name: "M_COVR",
+      featureCount: 1,
+      // Deliberately wider than the feature to ensure bounds use CATCOV=1 geometry.
+      geometryFields: [{ extent: [-88, 42, -87, 44] }],
+      features: [{
+        properties: { CATCOV: 1 },
+        geometry: { type: "Polygon", coordinates: [[[-87.9, 42.9], [-87.6, 42.9], [-87.6, 43.2], [-87.9, 43.2], [-87.9, 42.9]]] },
+      }],
+    }],
+  };
 }
 
 function summary(name: string, featureCount: number, extent: number[]): object {
@@ -52,6 +69,9 @@ describe("S-57 commands", () => {
     expect(datasetSummaryCommand(baseCell).args).toEqual([
       "-ro", "-json", "-summary", "-oo", "UPDATES=APPLY", "-oo", "SPLIT_MULTIPOINT=ON", "-oo",
       "ADD_SOUNDG_DEPTH=ON", baseCell,
+    ]);
+    expect(coverageCommand(baseCell).args).toEqual([
+      "-ro", "-json", "-features", "-oo", "UPDATES=APPLY", "-where", "CATCOV = 1", baseCell, "M_COVR",
     ]);
   });
 
@@ -81,6 +101,19 @@ describe("S-57 commands", () => {
     expect(command.args).toContain("SPLIT_MULTIPOINT=ON");
     expect(command.args).toContain("ADD_SOUNDG_DEPTH=ON");
     expect(command.args).toContain("SELECT DEPTH AS depth, 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale FROM SOUNDG");
+  });
+
+  it("extracts only positive M_COVR polygons as stable coverage", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const command = extractionCommand(baseCell, "layers.gpkg", {
+      source: "M_COVR",
+      outputLayer: "coverage",
+      properties: [],
+      where: "CATCOV = 1",
+    }, parsed, true);
+
+    expect(command.args).toContain("coverage");
+    expect(command.args).toContain("SELECT 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale FROM M_COVR WHERE CATCOV = 1");
   });
 
   it("constructs deterministic native GDAL PMTiles output", () => {

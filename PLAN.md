@@ -53,11 +53,11 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 
 ### M2: Core map
 
-- [ ] Render shoreline, depth areas, contours, and soundings from the spike package.
+- [x] Render shoreline, depth areas, contours, and soundings from generated packages.
 - [x] Support mouse/touch pan, wheel/pinch zoom, and visible pan/zoom controls.
 - [x] Show an overscale warning and detect when the map center leaves chart coverage.
-- [x] Select one usage band by display scale and lazily activate intersecting cells.
-- [ ] Use precise coverage geometry to eliminate remaining same-band boundary overlaps.
+- [x] Select a usage band by display scale and retain coarser fallback coverage beneath it.
+- [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
@@ -82,7 +82,7 @@ Acceptance: an installed application with a downloaded package starts and displa
 ### M5: Wisconsin coverage and updates
 
 - [x] Process all active cells in the Wisconsin exchange set, omitting edition-zero cancellation records.
-- [ ] Resolve overlapping usage bands and coverage boundaries.
+- [x] Resolve overlapping usage bands and coverage boundaries with a coverage-aware mosaic.
 - [ ] Automate NOAA catalog checks and atomic package replacement.
 - [ ] Retain the previous verified package if an update fails.
 

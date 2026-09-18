@@ -2,11 +2,13 @@ import type { Feature, FeatureCollection, Point, Polygon, Position } from "geojs
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 const SOURCE_ID = "device-position";
+export const POSITION_ACCURACY_LAYER_ID = "position-accuracy";
+export const POSITION_FIX_LAYER_ID = "position-fix";
 
 export function addPositionLayer(map: MapLibreMap): void {
   map.addSource(SOURCE_ID, { type: "geojson", data: emptyCollection() });
   map.addLayer({
-    id: "position-accuracy",
+    id: POSITION_ACCURACY_LAYER_ID,
     type: "fill",
     source: SOURCE_ID,
     filter: ["==", ["geometry-type"], "Polygon"],
@@ -17,7 +19,7 @@ export function addPositionLayer(map: MapLibreMap): void {
     },
   });
   map.addLayer({
-    id: "position-fix",
+    id: POSITION_FIX_LAYER_ID,
     type: "circle",
     source: SOURCE_ID,
     filter: ["==", ["geometry-type"], "Point"],

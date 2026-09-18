@@ -1,6 +1,8 @@
 export const CHART_LAYERS = ["coastline", "depth-area", "depth-contour", "sounding"] as const;
+export const TILE_LAYERS = ["coverage", ...CHART_LAYERS] as const;
 
 export type ChartLayer = (typeof CHART_LAYERS)[number];
+export type TileLayer = (typeof TILE_LAYERS)[number];
 export type DepthUnit = "metre" | "foot" | "fathom";
 
 export type ChartTileSet = {
@@ -10,7 +12,7 @@ export type ChartTileSet = {
   url: string;
   minZoom: number;
   maxZoom: number;
-  layers: ChartLayer[];
+  layers: TileLayer[];
 };
 
 export type ChartCell = {
@@ -105,7 +107,7 @@ function parseTileSet(value: unknown, index: number, cells: readonly ChartCell[]
   const maxZoom = integer(tileSet.maxZoom, `tileSets[${index}].maxZoom`, 0, 24);
   if (minZoom > maxZoom) fail(`tileSets[${index}].minZoom must not exceed maxZoom`);
   const layers = array(tileSet.layers, `tileSets[${index}].layers`).map((layer, layerIndex) => {
-    if (typeof layer !== "string" || !isChartLayer(layer)) {
+    if (typeof layer !== "string" || !isTileLayer(layer)) {
       fail(`tileSets[${index}].layers[${layerIndex}] is unsupported`);
     }
     return layer;
@@ -206,8 +208,8 @@ function date(value: unknown, path: string): string {
   return result;
 }
 
-function isChartLayer(value: string): value is ChartLayer {
-  return (CHART_LAYERS as readonly string[]).includes(value);
+function isTileLayer(value: string): value is TileLayer {
+  return (TILE_LAYERS as readonly string[]).includes(value);
 }
 
 function isDepthUnit(value: string): value is DepthUnit {

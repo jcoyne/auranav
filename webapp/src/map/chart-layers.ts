@@ -1,4 +1,4 @@
-import type { ChartLayer, ChartPackageManifest, DepthUnit } from "../chart-package";
+import type { ChartPackageManifest, DepthUnit, TileLayer } from "../chart-package";
 import { resolvePackageAssetUrl } from "../chart-package-url";
 import type { Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
 import { addProtocol, Popup } from "maplibre-gl";
@@ -9,6 +9,7 @@ import {
   demoDepthContours,
   demoSoundings,
 } from "./demo-chart";
+import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
 
 export const DEMO_SOURCE_IDS = {
   coastline: "demo-coastline",
@@ -24,13 +25,19 @@ export function addPackageChartLayers(
   map: MapLibreMap,
   manifest: ChartPackageManifest,
   manifestUrl: URL,
-): { showCells(cellNames: readonly string[]): void } {
+): {
+  showCells(cellNames: readonly string[]): void;
+  coverageCellNamesAtCenter(): string[] | undefined;
+} {
   registerPmtilesProtocol();
   const added = new Map<number, string[]>();
+  let visibleCellNames = new Set<string>();
 
   return {
     showCells(cellNames) {
       const visibleCells = new Set(cellNames);
+      visibleCellNames = visibleCells;
+      const beforeId = positionLayerId(map);
       manifest.tileSets.forEach((tileSet, index) => {
         if (tileSet.format !== "pmtiles") return;
         const existingLayerIds = added.get(index);
@@ -51,8 +58,51 @@ export function addPackageChartLayers(
           minzoom: tileSet.minZoom,
           maxzoom: tileSet.maxZoom,
         });
-        added.set(index, addVectorLayers(map, sourceId, index, tileSet.layers, manifest.depth.displayUnit));
+        added.set(index, addVectorLayers(
+          map,
+          sourceId,
+          index,
+          tileSet.layers,
+          manifest.depth.displayUnit,
+          beforeId,
+        ));
       });
+
+      // `cellNames` is coarse-to-detailed. Reapply that order because cells are
+      // loaded lazily and may have first appeared in a different view.
+      cellNames.forEach((cellName) => {
+        manifest.tileSets.forEach((tileSet, index) => {
+          if (tileSet.cellName !== cellName) return;
+          added.get(index)?.forEach((layerId) => map.moveLayer(layerId, beforeId));
+        });
+      });
+    },
+    coverageCellNamesAtCenter() {
+      const layersToCells = new Map<string, string>();
+      const cellsWithCoverage = new Set<string>();
+      const visibleCoverageSources: string[] = [];
+      manifest.tileSets.forEach((tileSet, index) => {
+        if (!visibleCellNames.has(tileSet.cellName) || !tileSet.layers.includes("coverage")) return;
+        const layerId = `chart-coverage-mask-${index}`;
+        if (added.get(index)?.includes(layerId)) {
+          layersToCells.set(layerId, tileSet.cellName);
+          cellsWithCoverage.add(tileSet.cellName);
+          visibleCoverageSources.push(`chart-package-${index}`);
+        }
+      });
+      // Mixed old/new packages cannot provide complete exact coverage, so let
+      // callers retain the bounds-based compatibility behavior.
+      if ([...visibleCellNames].some((cellName) => !cellsWithCoverage.has(cellName))) return undefined;
+      if (layersToCells.size === 0) return undefined;
+      if (visibleCoverageSources.some((sourceId) => !map.isSourceLoaded(sourceId))) return undefined;
+
+      const features = map.queryRenderedFeatures(map.project(map.getCenter()), {
+        layers: [...layersToCells.keys()],
+      });
+      return [...new Set(features.flatMap((feature) => {
+        const cellName = layersToCells.get(feature.layer.id);
+        return cellName === undefined ? [] : [cellName];
+      }))];
     },
   };
 }
@@ -67,10 +117,26 @@ function addVectorLayers(
   map: MapLibreMap,
   sourceId: string,
   index: number,
-  layers: ChartLayer[],
+  layers: TileLayer[],
   displayUnit: DepthUnit,
+  beforeId?: string,
 ): string[] {
   const layerIds: string[] = [];
+  if (layers.includes("coverage")) {
+    const layerId = `chart-coverage-mask-${index}`;
+    map.addLayer({
+      id: layerId,
+      type: "fill",
+      source: sourceId,
+      "source-layer": "coverage",
+      paint: {
+        "fill-color": "#d8f3f5",
+        "fill-opacity": 1,
+        "fill-antialias": false,
+      },
+    }, beforeId);
+    layerIds.push(layerId);
+  }
   if (layers.includes("depth-area")) {
     const layerId = `chart-depth-area-${index}`;
     map.addLayer({
@@ -86,7 +152,7 @@ function addVectorLayers(
         ],
         "fill-opacity": 0.88,
       },
-    });
+    }, beforeId);
     layerIds.push(layerId);
   }
 
@@ -98,7 +164,7 @@ function addVectorLayers(
       source: sourceId,
       "source-layer": "depth-contour",
       paint: { "line-color": "#367a90", "line-width": 1.5 },
-    });
+    }, beforeId);
     layerIds.push(layerId);
   }
 
@@ -110,7 +176,7 @@ function addVectorLayers(
       source: sourceId,
       "source-layer": "coastline",
       paint: { "line-color": "#282716", "line-width": 3 },
-    });
+    }, beforeId);
     layerIds.push(layerId);
   }
 
@@ -126,7 +192,7 @@ function addVectorLayers(
         "circle-color": "rgba(0, 0, 0, 0)",
         "circle-radius": 12,
       },
-    });
+    }, beforeId);
     layerIds.push(hitLayerId);
     const labelLayerId = `chart-sounding-label-${index}`;
     map.addLayer({
@@ -147,11 +213,17 @@ function addVectorLayers(
         "text-halo-color": "#f5fbfc",
         "text-halo-width": 1.5,
       },
-    });
+    }, beforeId);
     layerIds.push(labelLayerId);
     addSoundingInteraction(map, hitLayerId, displayUnit);
   }
   return layerIds;
+}
+
+function positionLayerId(map: MapLibreMap): string | undefined {
+  if (map.getLayer(POSITION_ACCURACY_LAYER_ID)) return POSITION_ACCURACY_LAYER_ID;
+  if (map.getLayer(POSITION_FIX_LAYER_ID)) return POSITION_FIX_LAYER_ID;
+  return undefined;
 }
 
 function soundingLabelExpression(unit: DepthUnit): ["number-format", ["*", ["get", "depth"], number], object] {

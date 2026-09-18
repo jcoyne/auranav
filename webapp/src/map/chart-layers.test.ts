@@ -9,6 +9,9 @@ describe("package chart layers", () => {
       addSource: vi.fn(),
       addLayer: vi.fn(),
       setLayoutProperty: vi.fn(),
+      moveLayer: vi.fn(),
+      getLayer: vi.fn(),
+      isSourceLoaded: vi.fn(() => true),
       on: vi.fn(),
       getCanvas: vi.fn(() => document.createElement("canvas")),
     } as unknown as MapLibreMap;
@@ -16,17 +19,82 @@ describe("package chart layers", () => {
 
     layers.showCells(["US4AAAAA"]);
     expect(map.addSource).toHaveBeenCalledTimes(1);
-    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "chart-coastline-0" }));
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "chart-coastline-0" }), undefined);
 
     layers.showCells(["US5BBBBB"]);
     expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-coastline-0", "visibility", "none");
     expect(map.addSource).toHaveBeenCalledTimes(2);
-    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "chart-coastline-1" }));
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "chart-coastline-1" }), undefined);
 
     layers.showCells(["US4AAAAA"]);
     expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-coastline-0", "visibility", "visible");
     expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-coastline-1", "visibility", "none");
     expect(map.addSource).toHaveBeenCalledTimes(2);
+  });
+
+  it("places each coverage mask before its chart content and keeps charts below GPS", () => {
+    const map = {
+      addSource: vi.fn(),
+      addLayer: vi.fn(),
+      setLayoutProperty: vi.fn(),
+      moveLayer: vi.fn(),
+      getLayer: vi.fn((id: string) => id === "position-accuracy" ? {} : undefined),
+      getCenter: vi.fn(() => ({ lng: -87.9, lat: 43 })),
+      project: vi.fn(() => ({ x: 100, y: 100 })),
+      queryRenderedFeatures: vi.fn(() => [{ layer: { id: "chart-coverage-mask-1" } }]),
+      isSourceLoaded: vi.fn(() => true),
+      on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets = chartManifest.tileSets.map((tileSet) => ({
+      ...tileSet,
+      layers: ["coverage", ...tileSet.layers],
+    }));
+    const layers = addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"));
+
+    layers.showCells(["US4AAAAA", "US5BBBBB"]);
+
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-coverage-mask-0",
+      "source-layer": "coverage",
+      paint: expect.objectContaining({ "fill-opacity": 1 }),
+    }), "position-accuracy");
+    const moved = vi.mocked(map.moveLayer).mock.calls.map(([id, before]) => [id, before]);
+    expect(moved).toEqual([
+      ["chart-coverage-mask-0", "position-accuracy"],
+      ["chart-coastline-0", "position-accuracy"],
+      ["chart-coverage-mask-1", "position-accuracy"],
+      ["chart-coastline-1", "position-accuracy"],
+    ]);
+    expect(layers.coverageCellNamesAtCenter()).toEqual(["US5BBBBB"]);
+  });
+
+  it("defers exact coverage status until every visible mask source is loaded", () => {
+    const map = {
+      addSource: vi.fn(),
+      addLayer: vi.fn(),
+      setLayoutProperty: vi.fn(),
+      moveLayer: vi.fn(),
+      getLayer: vi.fn(),
+      getCenter: vi.fn(() => ({ lng: -87.9, lat: 43 })),
+      project: vi.fn(() => ({ x: 100, y: 100 })),
+      queryRenderedFeatures: vi.fn(() => []),
+      isSourceLoaded: vi.fn(() => false),
+      on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets = chartManifest.tileSets.map((tileSet) => ({
+      ...tileSet,
+      layers: ["coverage", ...tileSet.layers],
+    }));
+    const layers = addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"));
+
+    layers.showCells(["US4AAAAA"]);
+
+    expect(layers.coverageCellNamesAtCenter()).toBeUndefined();
+    expect(map.queryRenderedFeatures).not.toHaveBeenCalled();
   });
 });
 

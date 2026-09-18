@@ -80,23 +80,37 @@ async function initializeChart(): Promise<void> {
     const manifestUrl = new URL(response.url || requestedManifestUrl.href);
     await mapLoaded;
     const chartLayers = addPackageChartLayers(map, manifest, manifestUrl);
+    const supportsCoverageMosaic = manifest.tileSets
+      .filter((tileSet) => tileSet.format === "pmtiles")
+      .every((tileSet) => tileSet.layers.includes("coverage"));
     const [west, south, east, north] = manifest.bounds;
     renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
+    let selectedCells = [] as typeof manifest.cells;
+    const updateScaleStatus = (): void => {
+      const center = map.getCenter();
+      const exactlyCoveredCellNames = chartLayers.coverageCellNamesAtCenter();
+      const statusCells = exactlyCoveredCellNames === undefined
+        ? selectedCells
+        : selectedCells.filter((cell) => exactlyCoveredCellNames.includes(cell.name));
+      renderScaleStatus(
+        scaleStatusElement,
+        evaluateChartScale(statusCells, map.getZoom(), center.lng, center.lat),
+      );
+    };
     const updateChartView = (): void => {
       const center = map.getCenter();
       const bounds = map.getBounds();
-      const selectedCells = selectChartCells(
+      selectedCells = selectChartCells(
         manifest.cells,
         [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
         displayScaleDenominator(map.getZoom(), center.lat),
+        supportsCoverageMosaic,
       );
       chartLayers.showCells(selectedCells.map((cell) => cell.name));
-      renderScaleStatus(
-        scaleStatusElement,
-        evaluateChartScale(selectedCells, map.getZoom(), center.lng, center.lat),
-      );
+      updateScaleStatus();
     };
     map.on("moveend", updateChartView);
+    map.on("idle", updateScaleStatus);
     map.fitBounds([[west, south], [east, north]], { padding: 48, duration: 0 });
     updateChartView();
   } catch (error) {

@@ -66,6 +66,10 @@ npm run cli -- convert-cell \
 The command applies updates through GDAL, splits multipoint `SOUNDG` features,
 adds each sounding's `DEPTH`, and stages whichever of `COALNE`, `DEPARE`,
 `DEPCNT`, and `SOUNDG` are present under stable names in a temporary GeoPackage.
+It also writes the cell's exact positive `M_COVR` geometry as the stable
+`coverage` layer. S-57 `CATCOV=2` polygons identify areas where coverage is not
+available and are deliberately excluded; NOAA's positive `CATCOV=1` geometry
+already bounds the charted area around them.
 Individual ENC cells are not required to contain every supported feature class.
 GDAL's native PMTiles driver creates the archive. The final directory also contains a schema-v1
 `manifest.json` and `USER_AGREEMENT.txt`.
@@ -74,7 +78,9 @@ Conversion refuses incomplete update sequences, an applied DSID update number
 that differs from the highest update file, empty or malformed present layers,
 missing `M_COVR` coverage, a cell with no supported chart layers, absent DSID/DSPM metadata, non-metre source depths, an
 invalid generated PMTiles layer set, and an existing output directory. Output
-is published only after all checks pass. Coverage bounds come from `M_COVR`.
+is published only after all checks pass. Coverage bounds are calculated from
+the same positive `M_COVR` features written to the archive, rather than the
+rectangular extent of every `M_COVR` record.
 The manifest preserves edition, update number and dates, compilation scale,
 vertical and sounding datums, source URL, and retrieval time.
 
