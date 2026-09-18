@@ -10,6 +10,8 @@ import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
 import { displayScaleDenominator, evaluateChartScale } from "./map/chart-scale";
 import { selectChartCells } from "./map/cell-selection";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
+import { OfflineControls } from "./offline/offline-controls";
+import { cleanupInactivePackages, readOfflineManifest } from "./offline/chart-store";
 import {
   renderChartError,
   renderChartLoading,
@@ -24,6 +26,19 @@ const controlsElement = requiredElement("map-controls");
 const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
 const scaleStatusElement = requiredElement("scale-status");
+const offlineToggleElement = requiredButton("offline-toggle");
+const offlinePanelElement = requiredElement("offline-panel");
+
+offlineToggleElement.addEventListener("click", () => {
+  const expanded = offlineToggleElement.getAttribute("aria-expanded") !== "true";
+  offlineToggleElement.setAttribute("aria-expanded", String(expanded));
+  offlinePanelElement.hidden = !expanded;
+});
+const offlineAppReady = "serviceWorker" in navigator && import.meta.env.PROD
+  ? navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`, { scope: import.meta.env.BASE_URL })
+    .then(async () => { await navigator.serviceWorker.ready; return true; })
+    .catch(() => false)
+  : undefined;
 
 const map = createMap(mapElement);
 const mapLoaded = new Promise<void>((resolve) => map.once("load", () => resolve()));
@@ -71,13 +86,24 @@ async function initializeChart(): Promise<void> {
     }
 
     renderChartLoading(chartStatusElement, requestedManifestUrl);
-    const response = await fetch(requestedManifestUrl);
-    if (!response.ok) throw new Error(`Manifest request failed (${response.status} ${response.statusText})`);
-    const manifest = parseChartPackageManifest(await response.json());
+    let manifestValue: unknown;
+    let manifestUrl = requestedManifestUrl;
+    try {
+      const response = await fetch(requestedManifestUrl, { cache: "no-cache" });
+      if (!response.ok) throw new Error(`Manifest request failed (${response.status} ${response.statusText})`);
+      manifestValue = await response.json();
+      manifestUrl = new URL(response.url || requestedManifestUrl.href);
+    } catch (error) {
+      manifestValue = await readOfflineManifest(requestedManifestUrl);
+      if (manifestValue === undefined) throw error;
+    }
+    const manifest = parseChartPackageManifest(manifestValue);
     if (!manifest.tileSets.some((tileSet) => tileSet.format === "pmtiles")) {
       throw new Error("The chart package does not contain a PMTiles archive.");
     }
-    const manifestUrl = new URL(response.url || requestedManifestUrl.href);
+    await cleanupInactivePackages().catch(() => undefined);
+    const offlineControls = new OfflineControls(offlinePanelElement, manifest, manifestUrl, offlineAppReady);
+    await offlineControls.render();
     await mapLoaded;
     const chartLayers = addPackageChartLayers(map, manifest, manifestUrl);
     const supportsCoverageMosaic = manifest.tileSets
@@ -172,5 +198,11 @@ function handlePositionState(state: PositionState): void {
 function requiredElement(id: string): HTMLElement {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Required element #${id} is missing`);
+  return element;
+}
+
+function requiredButton(id: string): HTMLButtonElement {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLButtonElement)) throw new Error(`Required button #${id} is missing`);
   return element;
 }

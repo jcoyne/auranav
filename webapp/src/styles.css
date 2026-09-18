@@ -65,6 +65,18 @@ button { font: inherit; }
   text-align: right;
 }
 
+.offline-toggle {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 0.45rem;
+  color: #f2fafb;
+  background: #075c92;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.offline-toggle:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
+
 .map-shell { position: relative; min-height: 0; }
 
 .map { background: #d8f3f5; }
@@ -203,9 +215,45 @@ button { font: inherit; }
 .chart-status p { margin: 0; color: #526872; font-size: 0.72rem; line-height: 1.35; }
 .chart-status a { color: #075c92; font-weight: 700; }
 
+.offline-panel {
+  position: absolute;
+  z-index: 4;
+  top: 1rem;
+  right: max(1rem, env(safe-area-inset-right));
+  width: min(24rem, calc(100% - 2rem));
+  padding: 1rem;
+  border: 1px solid rgb(9 42 59 / 30%);
+  border-radius: 0.65rem;
+  color: #18343e;
+  background: rgb(251 253 248 / 98%);
+  box-shadow: 0 4px 16px rgb(0 27 38 / 28%);
+}
+
+.offline-panel[hidden] { display: none; }
+.offline-panel h2 { margin: 0 0 0.55rem; font-size: 1rem; }
+.offline-panel p { margin: 0.45rem 0; font-size: 0.78rem; line-height: 1.4; }
+.offline-panel a { color: #075c92; font-size: 0.78rem; font-weight: 700; }
+.offline-panel progress { width: 100%; accent-color: #087fcb; }
+.offline-panel .offline-ready { color: #126332; font-weight: 750; }
+.offline-panel .offline-error { color: #8a251d; font-weight: 750; }
+.offline-panel .offline-storage-note { color: #526872; }
+.offline-actions { display: flex; gap: 0.55rem; margin-top: 0.75rem; }
+.offline-actions button {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #075c92;
+  border-radius: 0.4rem;
+  color: #fff;
+  background: #087fcb;
+  font-weight: 750;
+  cursor: pointer;
+}
+.offline-actions button.secondary { color: #075c92; background: #fff; }
+.offline-actions button:disabled { opacity: 0.55; cursor: wait; }
+
 @media (max-width: 680px) {
   .app-header { min-height: 4rem; }
   .disclaimer { max-width: 11rem; }
+  .offline-toggle { padding-inline: 0.55rem; }
   .chart-status { bottom: 2rem; }
   .location-status {
     top: auto;

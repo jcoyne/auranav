@@ -3,6 +3,7 @@ import { resolvePackageAssetUrl } from "../chart-package-url";
 import type { ExpressionSpecification, Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
 import { addProtocol, Popup } from "maplibre-gl";
 import { PMTiles, Protocol } from "pmtiles";
+import { createChartSource } from "../offline/chart-store";
 import {
   demoCoastline,
   demoDepthAreas,
@@ -50,7 +51,7 @@ export function addPackageChartLayers(
         if (!visibleCells.has(tileSet.cellName)) return;
 
         const archiveUrl = resolvePackageAssetUrl(tileSet.url, manifestUrl).href;
-        protocol.add(new PMTiles(archiveUrl));
+        protocol.add(new PMTiles(createChartSource(archiveUrl)));
         const sourceId = chartSourceId(index);
         map.addSource(sourceId, {
           type: "vector",
@@ -208,7 +209,7 @@ function addVectorLayers(
       minzoom: 9,
       layout: {
         "text-field": soundingLabelExpression(displayUnit),
-        "text-font": ["Open Sans Regular"],
+        "text-font": ["Noto Sans Regular"],
         "text-size": 12,
         "text-allow-overlap": false,
         "text-padding": 3,
@@ -248,7 +249,7 @@ function addVectorLayers(
         // Keep the magenta light flare visible even when its descriptive
         // label collides with another chart annotation.
         "text-field": "✦",
-        "text-font": ["Open Sans Regular"],
+        "text-font": ["Noto Sans Regular"],
         "text-size": 16,
         "text-allow-overlap": true,
         "text-ignore-placement": true,
@@ -270,7 +271,7 @@ function addVectorLayers(
       minzoom: 8,
       layout: {
         "text-field": lightLabelExpression(),
-        "text-font": ["Open Sans Regular"],
+        "text-font": ["Noto Sans Regular"],
         "text-size": 12,
         "text-variable-anchor": ["left", "right", "top", "bottom", "top-left", "top-right"],
         "text-radial-offset": 1,

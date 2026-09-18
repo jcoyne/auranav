@@ -10,7 +10,7 @@ export function createMap(container: HTMLElement): MapLibreMap {
     attributionControl: false,
     style: {
       version: 8,
-      glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+      glyphs: `${import.meta.env.BASE_URL}fonts/{fontstack}/{range}.pbf`,
       sources: {},
       layers: [{ id: "water", type: "background", paint: { "background-color": "#d8f3f5" } }],
     },

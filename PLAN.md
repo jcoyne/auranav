@@ -13,6 +13,7 @@ The application is not an ECDIS and is not certified for navigation.
 - Use MapLibre GL JS for vector-map rendering and its mouse/touch gestures.
 - Preprocess NOAA S-57 exchange sets outside the browser.
 - Package charts for offline use and retain their source, edition, update, scale, units, datum, and coverage metadata.
+- Store complete chart packages in the browser's Origin Private File System (OPFS), with a service worker responsible only for the application shell.
 - Start with Wisconsin NOAA ENC coverage.
 
 ## System boundary
@@ -73,19 +74,19 @@ Acceptance: automated tests cover each location state; stopping follow mode rele
 
 ### M4: Offline installation
 
-- [ ] Add a web app manifest and service worker.
-- [ ] Cache the application shell and selected chart packages.
-- [ ] Expose package download, progress, version, update, and removal UI.
-- [ ] Define storage-quota and interrupted-download behavior.
+- [x] Add a web app manifest and service worker.
+- [x] Cache the application shell and store complete selected chart packages in OPFS.
+- [x] Expose package download, progress, version, update, and removal UI.
+- [x] Define storage-quota and interrupted-download behavior.
 
-Acceptance: an installed application with a downloaded package starts and displays charts with networking disabled.
+Acceptance: an installed application with a downloaded package starts and displays charts with networking disabled. Automated production-build checks are complete; installed iOS and Android airplane-mode validation remains part of M6 field testing.
 
 ### M5: Wisconsin coverage and updates
 
 - [x] Process all active cells in the Wisconsin exchange set, omitting edition-zero cancellation records.
 - [x] Resolve overlapping usage bands and coverage boundaries with a coverage-aware mosaic.
 - [ ] Automate NOAA catalog checks and atomic package replacement.
-- [ ] Retain the previous verified package if an update fails.
+- [x] Retain the previous verified package if an update fails.
 
 Acceptance: the full package passes schema and integrity checks, update dates are visible, and failed refreshes cannot corrupt the installed package.
 
