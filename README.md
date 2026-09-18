@@ -24,6 +24,19 @@ The development server selects `data/packages/wisconsin/manifest.json` by defaul
 
 Each project has its own README with local development commands. Downloaded and generated chart data belongs under `data/` and is ignored by Git.
 
+## Deployment
+
+`npm run deploy` builds the application for a site subdirectory and copies it, together with one chart package, into a static site directory:
+
+```sh
+npm run deploy
+DEPLOY_DEST=/path/to/site/auranav DEPLOY_BASE=/auranav/ DEPLOY_PACKAGE=wisconsin npm run deploy
+```
+
+The subdirectory must be baked in at build time, because Vite resolves asset URLs against it and the application registers its service worker under that scope. Production builds have no default chart package, so the script points the viewer at the package copy it deploys alongside the application. The script copies files only; committing and publishing the destination is a separate, deliberate step.
+
+Chart packages are large binary files. Repeated deployments into a Git-backed site permanently grow that repository's history. The hosting origin must serve HTTPS, so that service workers, OPFS, and geolocation are available, and must honour HTTP range requests for PMTiles.
+
 ## Safety and source
 
 NOAA ENC data includes charted conditions and metadata whose age and accuracy vary. Displayed depths refer to a chart datum rather than the live water surface. The application must display chart age, units, datum, position accuracy, and its informational-use limitation.
