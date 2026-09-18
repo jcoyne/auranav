@@ -94,7 +94,42 @@ describe("package chart layers", () => {
     layers.showCells(["US4AAAAA"]);
 
     expect(layers.coverageCellNamesAtCenter()).toBeUndefined();
+    expect(map.isSourceLoaded).toHaveBeenCalledWith("chart-0");
     expect(map.queryRenderedFeatures).not.toHaveBeenCalled();
+  });
+
+  it("checks the same source ID that was registered when queried immediately", () => {
+    const registeredSourceIds = new Set<string>();
+    const map = {
+      addSource: vi.fn((sourceId: string) => registeredSourceIds.add(sourceId)),
+      addLayer: vi.fn(),
+      setLayoutProperty: vi.fn(),
+      moveLayer: vi.fn(),
+      getLayer: vi.fn(),
+      getCenter: vi.fn(() => ({ lng: -87.9, lat: 43 })),
+      project: vi.fn(() => ({ x: 100, y: 100 })),
+      queryRenderedFeatures: vi.fn(() => []),
+      isSourceLoaded: vi.fn((sourceId: string) => {
+        if (!registeredSourceIds.has(sourceId)) {
+          throw new Error(`There is no tile manager with ID '${sourceId}'`);
+        }
+        return false;
+      }),
+      on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets = chartManifest.tileSets.map((tileSet) => ({
+      ...tileSet,
+      layers: ["coverage", ...tileSet.layers],
+    }));
+    const layers = addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"));
+
+    layers.showCells(["US4AAAAA"]);
+
+    expect(() => layers.coverageCellNamesAtCenter()).not.toThrow();
+    expect(map.addSource).toHaveBeenCalledWith("chart-0", expect.any(Object));
+    expect(map.isSourceLoaded).toHaveBeenCalledWith("chart-0");
   });
 });
 

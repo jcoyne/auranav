@@ -50,7 +50,7 @@ export function addPackageChartLayers(
 
         const archiveUrl = resolvePackageAssetUrl(tileSet.url, manifestUrl).href;
         protocol.add(new PMTiles(archiveUrl));
-        const sourceId = `chart-${index}`;
+        const sourceId = chartSourceId(index);
         map.addSource(sourceId, {
           type: "vector",
           url: `pmtiles://${archiveUrl}`,
@@ -87,7 +87,7 @@ export function addPackageChartLayers(
         if (added.get(index)?.includes(layerId)) {
           layersToCells.set(layerId, tileSet.cellName);
           cellsWithCoverage.add(tileSet.cellName);
-          visibleCoverageSources.push(`chart-package-${index}`);
+          visibleCoverageSources.push(chartSourceId(index));
         }
       });
       // Mixed old/new packages cannot provide complete exact coverage, so let
@@ -105,6 +105,10 @@ export function addPackageChartLayers(
       }))];
     },
   };
+}
+
+function chartSourceId(index: number): string {
+  return `chart-${index}`;
 }
 
 function registerPmtilesProtocol(): void {
