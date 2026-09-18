@@ -1,4 +1,11 @@
-import { AttributionControl, Map as MapLibreMap } from "maplibre-gl";
+import { AttributionControl, Map as MapLibreMap, setWorkerUrl } from "maplibre-gl";
+// maplibre-gl derives its worker URL from `new URL("./maplibre-gl-worker.mjs", import.meta.url)`
+// at runtime. A bundled entry chunk resolves that to a sibling of itself in the build output,
+// where the worker was never emitted, so the request returns the host's 404 page instead.
+// `?worker&url` makes Vite bundle the worker with its shared dependency and emit it as an asset.
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 export function createMap(container: HTMLElement): MapLibreMap {
   const map = new MapLibreMap({
