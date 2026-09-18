@@ -16,7 +16,11 @@ Node.js 22.22.2 or newer is required.
 ```sh
 npm install
 npm run check
+npm run dev
 ```
+
+With the generated Wisconsin package present, open `http://localhost:5173/`.
+The development server selects `data/packages/wisconsin/manifest.json` by default.
 
 Each project has its own README with local development commands. Downloaded and generated chart data belongs under `data/` and is ignored by Git.
 

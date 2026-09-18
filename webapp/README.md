@@ -2,7 +2,7 @@
 
 Framework-free TypeScript user interface for viewing chart packages produced by `pipeline/`. MapLibre GL JS supplies map rendering and its standard pointer, wheel, keyboard, and touch gestures.
 
-With no chart package configured, the map uses conspicuously labeled synthetic geometry near Milwaukee. It proves the shell and shared layer vocabulary without presenting invented geometry as NOAA chart data.
+During development, the app opens `/data/packages/wisconsin/manifest.json` by default. If that generated package is unavailable, the app shows a visible package error. Production builds with no chart package configured use conspicuously labeled synthetic geometry near Milwaukee; that preview proves the shell and shared layer vocabulary without presenting invented geometry as NOAA chart data.
 
 To open a schema-v1 package, pass its manifest URL in the query string:
 
@@ -16,7 +16,7 @@ During development the repository's `data/` directory is mounted at `/data`, so 
 http://localhost:5173/?manifest=/data/packages/wisconsin/manifest.json
 ```
 
-Alternatively, set `VITE_CHART_MANIFEST_URL=/charts/manifest.json` at build time for a stable default. A query-string URL takes precedence. Relative PMTiles and user-agreement paths are resolved against the final manifest response URL, including after redirects. The package server must support HTTP range requests and CORS when it is on a different origin.
+Alternatively, set `VITE_CHART_MANIFEST_URL=/charts/manifest.json` at build time for a stable default. A query-string URL takes precedence over both configured and development defaults. Remove an old `?manifest=/data/packages/us4wi1dp/manifest.json` query parameter to stop explicitly selecting the one-cell spike. Relative PMTiles and user-agreement paths are resolved against the final manifest response URL, including after redirects. The package server must support HTTP range requests and CORS when it is on a different origin.
 
 Configured manifests are validated defensively before use. A bad or unavailable configured package produces a visible error instead of silently displaying the synthetic preview.
 
