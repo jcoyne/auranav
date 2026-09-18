@@ -35,6 +35,8 @@ DEPLOY_DEST=/path/to/site/auranav DEPLOY_BASE=/auranav/ DEPLOY_PACKAGE=wisconsin
 
 The subdirectory must be baked in at build time, because Vite resolves asset URLs against it and the application registers its service worker under that scope. Production builds have no default chart package, so the script points the viewer at the package copy it deploys alongside the application. The script copies files only; committing and publishing the destination is a separate, deliberate step.
 
+The service worker caches the application shell on install, and a browser only reinstalls a worker whose script bytes changed. The build therefore names the shell cache after a hash of the deployed files, so each deployment invalidates the previous shell. Deployments also retain previously deployed `assets/` files, because a browser still holding an earlier `index.html` keeps requesting the content-hashed assets that document names. Removing them turns an out-of-date shell into a hard failure rather than a page that updates on its next visit. A visitor who already holds the previous shell loads it once more and picks up the new build on the following navigation.
+
 Chart packages are large binary files. Repeated deployments into a Git-backed site permanently grow that repository's history. The hosting origin must serve HTTPS, so that service workers, OPFS, and geolocation are available, and must honour HTTP range requests for PMTiles.
 
 ## Safety and source

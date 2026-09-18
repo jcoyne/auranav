@@ -25,9 +25,15 @@ VITE_CHART_MANIFEST_URL="${BASE}data/packages/$PACKAGE/manifest.json" \
   npm run build --workspace webapp -- --base="$BASE"
 
 mkdir -p "$DEST"
-# Keep the deployed shell an exact copy of dist/ while preserving data/, which
-# is populated separately below.
-rsync -a --delete --exclude 'data/' "$repo_root/webapp/dist/" "$DEST/"
+# Keep the deployed shell an exact copy of dist/, preserving data/ (populated
+# separately below) and assets/ (handled additively).
+rsync -a --delete --exclude 'data/' --exclude 'assets/' "$repo_root/webapp/dist/" "$DEST/"
+# Asset file names contain a content hash, so they are immutable and previous ones
+# are retained deliberately. A browser or service worker still holding the previous
+# index.html keeps requesting the assets that document names; deleting them turns
+# that stale shell into a hard failure instead of a page that updates on the next
+# visit. Prune the directory manually when old builds are no longer in circulation.
+rsync -a "$repo_root/webapp/dist/assets/" "$DEST/assets/"
 rsync -a --delete "$package_dir/" "$DEST/data/packages/$PACKAGE/"
 # GitHub Pages runs Jekyll by default, which would ignore any future asset
 # whose name begins with an underscore.
