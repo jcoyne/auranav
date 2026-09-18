@@ -62,4 +62,4 @@ Or run the corresponding workspace commands from the repository root.
 
 This is a recreational and informational viewer. It is not an ECDIS and is not a substitute for official charts, prudent navigation, or situational awareness. A successful build or visual inspection does not establish navigation-grade correctness.
 
-Location requires a secure browser context (HTTPS, except for localhost) and explicit user permission. The app shows reported GPS accuracy; it does not imply that the position or chart geometry is exact.
+Location requires a secure browser context (HTTPS, except for localhost) and explicit user permission. The app shows coordinates, the fix timestamp, and the browser-reported accuracy radius. A fix is marked stale after 30 seconds without an update. Reported accuracy does not imply that the position or chart geometry is exact.

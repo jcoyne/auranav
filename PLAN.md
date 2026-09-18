@@ -67,7 +67,7 @@ Acceptance: the map remains interactive on desktop and a touch viewport, does no
 ### M3: GPS
 
 - [x] Add explicit locate and follow controls using the browser Geolocation API.
-- [ ] Display position, accuracy circle, timestamp, and stale-fix state.
+- [x] Display position, accuracy circle, timestamp, and stale-fix state.
 - [x] Handle unsupported, denied, unavailable, and timed-out location states.
 
 Acceptance: automated tests cover each location state; stopping follow mode releases the geolocation watch.

@@ -13,9 +13,9 @@ export function addPositionLayer(map: MapLibreMap): void {
     source: SOURCE_ID,
     filter: ["==", ["geometry-type"], "Polygon"],
     paint: {
-      "fill-color": "#087fcb",
-      "fill-opacity": 0.16,
-      "fill-outline-color": "#087fcb",
+      "fill-color": ["case", ["get", "stale"], "#6b7780", "#087fcb"],
+      "fill-opacity": ["case", ["get", "stale"], 0.1, 0.16],
+      "fill-outline-color": ["case", ["get", "stale"], "#6b7780", "#087fcb"],
     },
   });
   map.addLayer({
@@ -25,26 +25,30 @@ export function addPositionLayer(map: MapLibreMap): void {
     filter: ["==", ["geometry-type"], "Point"],
     paint: {
       "circle-radius": 7,
-      "circle-color": "#087fcb",
+      "circle-color": ["case", ["get", "stale"], "#6b7780", "#087fcb"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 3,
     },
   });
 }
 
-export function updatePositionLayer(map: MapLibreMap, position: GeolocationPosition): void {
+export function updatePositionLayer(
+  map: MapLibreMap,
+  position: GeolocationPosition,
+  stale = false,
+): void {
   const source = map.getSource<GeoJSONSource>(SOURCE_ID);
   if (!source) return;
 
   const center: Position = [position.coords.longitude, position.coords.latitude];
   const point: Feature<Point> = {
     type: "Feature",
-    properties: { timestamp: position.timestamp },
+    properties: { timestamp: position.timestamp, stale },
     geometry: { type: "Point", coordinates: center },
   };
   source.setData({
     type: "FeatureCollection",
-    features: [accuracyCircle(center, position.coords.accuracy), point],
+    features: [accuracyCircle(center, position.coords.accuracy, stale), point],
   });
 }
 
@@ -52,7 +56,7 @@ function emptyCollection(): FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-function accuracyCircle(center: Position, radiusMetres: number): Feature<Polygon> {
+function accuracyCircle(center: Position, radiusMetres: number, stale: boolean): Feature<Polygon> {
   const [longitude = 0, latitude = 0] = center;
   const latitudeRadians = latitude * Math.PI / 180;
   const latitudeDegreesPerMetre = 1 / 111_320;
@@ -70,7 +74,7 @@ function accuracyCircle(center: Position, radiusMetres: number): Feature<Polygon
 
   return {
     type: "Feature",
-    properties: { accuracy: safeRadiusMetres },
+    properties: { accuracy: safeRadiusMetres, stale },
     geometry: { type: "Polygon", coordinates: [ring] },
   };
 }

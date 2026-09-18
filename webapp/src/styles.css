@@ -142,6 +142,11 @@ button { font: inherit; }
   z-index: 2;
   top: 1rem;
   left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
   max-width: min(28rem, calc(100% - 12rem));
   padding: 0.55rem 0.8rem;
   transform: translateX(-50%);
@@ -155,6 +160,21 @@ button { font: inherit; }
 }
 
 .location-status.is-warning { color: #541e14; background: #fff1dc; }
+.location-status.is-stale { border-color: #805a18; background: rgb(255 247 226 / 96%); }
+
+.location-fix-state,
+.location-follow-state {
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.location-fix-state.is-current { color: #fff; background: #087fcb; }
+.location-fix-state.is-stale { color: #fff; background: #805a18; }
+.location-follow-state { color: #40555e; background: #e5edf0; }
+.location-update-state { flex-basis: 100%; font-weight: 650; }
 
 .scale-status {
   position: absolute;

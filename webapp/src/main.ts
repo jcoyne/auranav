@@ -13,10 +13,15 @@ import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
 import { OfflineControls } from "./offline/offline-controls";
 import { cleanupInactivePackages, readOfflineManifest } from "./offline/chart-store";
 import {
+  isPositionStale,
+  millisecondsUntilPositionStale,
+  renderLocationMessage,
+  renderPositionStatus,
+} from "./ui/location-status";
+import {
   renderChartError,
   renderChartLoading,
   renderChartStatus,
-  renderLocationStatus,
   renderPackageChartStatus,
   renderScaleStatus,
 } from "./ui/chart-status";
@@ -44,6 +49,7 @@ const map = createMap(mapElement);
 const mapLoaded = new Promise<void>((resolve) => map.once("load", () => resolve()));
 let controls: MapControls;
 let latestPosition: GeolocationPosition | undefined;
+let stalePositionTimer: number | undefined;
 
 const tracker = new PositionTracker(navigator.geolocation, (state) => handlePositionState(state));
 
@@ -63,10 +69,10 @@ map.on("dragstart", () => {
   if (!controls.isFollowing) return;
   controls.setFollowing(false);
   tracker.stop(false);
-  renderLocationStatus(locationStatusElement, "Location follow paused after manual pan.");
+  renderLatestPosition();
 });
 
-renderLocationStatus(locationStatusElement, "");
+renderLocationMessage(locationStatusElement, "");
 void initializeChart();
 
 async function initializeChart(): Promise<void> {
@@ -145,54 +151,95 @@ async function initializeChart(): Promise<void> {
   } finally {
     await mapLoaded;
     addPositionLayer(map);
-    if (latestPosition) updatePositionLayer(map, latestPosition);
+    if (latestPosition) updatePositionLayer(map, latestPosition, isPositionStale(latestPosition));
   }
 }
 
 function handlePositionState(state: PositionState): void {
   switch (state.kind) {
     case "idle":
-      renderLocationStatus(locationStatusElement, "Location follow stopped.");
+      if (latestPosition) {
+        renderLatestPosition();
+      } else {
+        renderLocationMessage(locationStatusElement, "Location follow stopped.");
+      }
       break;
     case "requesting":
-      renderLocationStatus(locationStatusElement, "Requesting location…");
+      clearStalePositionTimer();
+      renderLocationMessage(locationStatusElement, "Requesting location…");
       break;
     case "tracking": {
       latestPosition = state.position;
-      updatePositionLayer(map, state.position);
       if (controls.isFollowing) centerMapOn(map, state.position);
-      const { accuracy } = state.position.coords;
-      renderLocationStatus(
-        locationStatusElement,
-        `GPS accuracy ±${Math.round(accuracy)} m · ${new Date(state.position.timestamp).toLocaleTimeString()}`,
-      );
+      renderLatestPosition();
       break;
     }
     case "unsupported":
       controls.setFollowing(false);
-      renderLocationStatus(locationStatusElement, "This browser does not support location services.", true);
+      renderPositionFailure("This browser does not support location services.");
       break;
     case "denied":
       tracker.stop(false);
       controls.setFollowing(false);
-      renderLocationStatus(locationStatusElement, "Location permission was denied. Enable it in browser settings to show your position.", true);
+      renderPositionFailure("Location permission was denied. Enable it in browser settings to show your position.");
       break;
     case "unavailable":
       tracker.stop(false);
       controls.setFollowing(false);
-      renderLocationStatus(locationStatusElement, "A GPS position is currently unavailable.", true);
+      renderPositionFailure("A GPS position is currently unavailable.");
       break;
     case "timeout":
       tracker.stop(false);
       controls.setFollowing(false);
-      renderLocationStatus(locationStatusElement, "The location request timed out. Try again with a clearer view of the sky.", true);
+      renderPositionFailure("The location request timed out. Try again with a clearer view of the sky.");
       break;
     case "error":
       tracker.stop(false);
       controls.setFollowing(false);
-      renderLocationStatus(locationStatusElement, `Location failed: ${state.message}`, true);
+      renderPositionFailure(`Location failed: ${state.message}`);
       break;
   }
+}
+
+function renderPositionFailure(message: string): void {
+  clearStalePositionTimer();
+  if (!latestPosition) {
+    renderLocationMessage(locationStatusElement, message, true);
+    return;
+  }
+
+  updatePositionLayer(map, latestPosition, true);
+  renderPositionStatus(locationStatusElement, latestPosition, "paused", Date.now(), {
+    forceStale: true,
+    notice: message,
+  });
+}
+
+function renderLatestPosition(): void {
+  if (!latestPosition) return;
+  const now = Date.now();
+  const stale = isPositionStale(latestPosition, now);
+  updatePositionLayer(map, latestPosition, stale);
+  renderPositionStatus(
+    locationStatusElement,
+    latestPosition,
+    controls.isFollowing ? "following" : "paused",
+    now,
+  );
+  clearStalePositionTimer();
+  if (stale) return;
+
+  const position = latestPosition;
+  stalePositionTimer = window.setTimeout(() => {
+    if (latestPosition !== position) return;
+    renderLatestPosition();
+  }, millisecondsUntilPositionStale(position, now) + 1);
+}
+
+function clearStalePositionTimer(): void {
+  if (stalePositionTimer === undefined) return;
+  window.clearTimeout(stalePositionTimer);
+  stalePositionTimer = undefined;
 }
 
 function requiredElement(id: string): HTMLElement {

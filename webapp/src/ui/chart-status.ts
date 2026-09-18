@@ -101,12 +101,6 @@ function displayUnitLabel(unit: ChartPackageManifest["depth"]["displayUnit"]): s
   return "metres";
 }
 
-export function renderLocationStatus(container: HTMLElement, message: string, warning = false): void {
-  container.textContent = message;
-  container.classList.toggle("is-warning", warning);
-  container.hidden = message.length === 0;
-}
-
 export function renderScaleStatus(container: HTMLElement, state: ChartScaleState): void {
   if (state.kind === "outside-coverage") {
     container.textContent = "Outside chart coverage";
