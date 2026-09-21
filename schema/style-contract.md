@@ -53,6 +53,9 @@ Point features, one per distinct landform name in a cell, derived from the named
 - A feature must retain its source cell and scale metadata.
 - The webapp should prefer the largest-scale suitable coverage and must indicate overscaling.
 - Soundings should be filtered by zoom and density rather than rendered at all scales.
+- Depth contours should carry their value along the line in the display unit. Foot and fathom
+  curves are whole units: NOAA stores the 6 ft curve as 1.8 m, so a converted value is rounded
+  to recover what the chart calls it. The zero curve is the low-water line and is not labelled.
 - Landform labels should appear only in the zoom band where the landform is legible at screen size, using `spanDegrees`, so mainland labels do not persist at every scale.
 - Sounding and light labels take collision priority over landform labels.
 - Schema version 1 styling is intentionally simplified and must not be represented as IHO S-52/ECDIS portrayal.

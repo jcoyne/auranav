@@ -27,6 +27,9 @@ let protocolRegistered = false;
 
 const LAND_LABEL_LAYER_PREFIX = "chart-land-label-";
 
+/** Below roughly 1:100,000 the contours are too closely spaced to label legibly. */
+const CONTOUR_LABEL_MIN_ZOOM = 11;
+
 export function addPackageChartLayers(
   map: MapLibreMap,
   manifest: ChartPackageManifest,
@@ -190,6 +193,35 @@ function addVectorLayers(
       paint: { "line-color": "#367a90", "line-width": 1.5 },
     }, beforeId);
     layerIds.push(layerId);
+
+    const labelLayerId = `chart-depth-contour-label-${index}`;
+    // Placed with its line, ahead of the soundings, so a contour label wins the
+    // collision against a sounding the way a chart breaks soundings around it.
+    map.addLayer({
+      id: labelLayerId,
+      type: "symbol",
+      source: sourceId,
+      "source-layer": "depth-contour",
+      minzoom: CONTOUR_LABEL_MIN_ZOOM,
+      // The zero curve is the low-water line, which a chart draws but does not
+      // label. `to-number` turns an absent depth into zero, dropping it too.
+      filter: [">", ["to-number", ["get", "depth"]], 0],
+      layout: {
+        "symbol-placement": "line",
+        "symbol-spacing": 250,
+        "text-field": contourLabelExpression(displayUnit),
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 11,
+        "text-padding": 3,
+        "text-keep-upright": true,
+      },
+      paint: {
+        "text-color": "#367a90",
+        "text-halo-color": "#f5fbfc",
+        "text-halo-width": 2,
+      },
+    }, beforeId);
+    layerIds.push(labelLayerId);
   }
 
   if (layers.includes("land-area")) {
@@ -398,13 +430,29 @@ function positionLayerId(map: MapLibreMap): string | undefined {
   return undefined;
 }
 
-function soundingLabelExpression(unit: DepthUnit): ["number-format", ["*", ["get", "depth"], number], object] {
-  const conversionFactor = unit === "foot" ? 3.28084 : unit === "fathom" ? 0.546807 : 1;
+function depthConversionFactor(unit: DepthUnit): number {
+  return unit === "foot" ? 3.28084 : unit === "fathom" ? 0.546807 : 1;
+}
+
+function soundingLabelExpression(unit: DepthUnit): ExpressionSpecification {
   return [
     "number-format",
-    ["*", ["get", "depth"], conversionFactor],
+    ["*", ["get", "depth"], depthConversionFactor(unit)],
     { "min-fraction-digits": 1, "max-fraction-digits": 1 },
   ];
+}
+
+/**
+ * Charted foot and fathom curves are whole units. NOAA stores them converted to
+ * metres, so the 6 ft curve arrives as 1.8 m; rounding recovers what the chart
+ * calls it. A metric curve keeps a decimal, where 1.8 m is the value itself.
+ * `number-format` cannot do this: it ignores a zero fraction-digit option.
+ */
+export function contourLabelExpression(unit: DepthUnit): ExpressionSpecification {
+  const converted: ExpressionSpecification = ["*", ["get", "depth"], depthConversionFactor(unit)];
+  return unit === "metre"
+    ? ["number-format", converted, { "min-fraction-digits": 1, "max-fraction-digits": 1 }]
+    : ["to-string", ["round", converted]];
 }
 
 export function addDemoChartLayers(map: MapLibreMap): void {
@@ -514,9 +562,7 @@ function addLightInteraction(map: MapLibreMap, layerId: string): void {
 }
 
 function convertMetres(depth: number, unit: DepthUnit): number {
-  if (unit === "foot") return depth * 3.28084;
-  if (unit === "fathom") return depth * 0.546807;
-  return depth;
+  return depth * depthConversionFactor(unit);
 }
 
 function formatDepth(depth: number): string {

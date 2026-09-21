@@ -63,6 +63,7 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 - [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
 - [x] Render navigation lights with conventional characteristic, color, period, height, and range labels.
 - [x] Fill land areas (`LNDARE`) and label named landforms from `LNDARE` and `LNDRGN`.
+- [x] Label depth contours along the line in the package display unit.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.

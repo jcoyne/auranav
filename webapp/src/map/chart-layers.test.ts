@@ -3,7 +3,7 @@ import type { LayerSpecification, Map as MapLibreMap } from "maplibre-gl";
 import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { ChartPackageManifest } from "../chart-package";
 import { TILE_LAYERS } from "../chart-package";
-import { addPackageChartLayers } from "./chart-layers";
+import { addPackageChartLayers, contourLabelExpression } from "./chart-layers";
 import { landLabelFilter } from "./land";
 import { LIGHT_FLARE_PIXEL_RATIO, lightFlareIconExpression } from "./light-icon";
 
@@ -239,6 +239,39 @@ describe("package chart layers", () => {
     expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-land-label-1", "visibility", "visible");
   });
 
+
+  it("labels depth contours along the line in the package display unit", () => {
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
+      getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["depth-contour", "sounding"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-depth-contour-label-0",
+      type: "symbol",
+      "source-layer": "depth-contour",
+      layout: expect.objectContaining({
+        "symbol-placement": "line",
+        "text-field": contourLabelExpression("foot"),
+      }),
+    }), undefined);
+
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-depth-contour-label-0",
+      filter: [">", ["to-number", ["get", "depth"]], 0],
+    }), undefined);
+
+    // Contour labels are placed before soundings, so they win the collision.
+    const order = vi.mocked(map.addLayer).mock.calls.map(([layer]) => layer.id);
+    expect(order.indexOf("chart-depth-contour-label-0"))
+      .toBeLessThan(order.indexOf("chart-sounding-label-0"));
+  });
 
   it("produces layer specifications MapLibre accepts", () => {
     const map = {
