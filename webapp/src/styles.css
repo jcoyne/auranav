@@ -158,6 +158,37 @@ button { font: inherit; }
 .map-controls button:active { transform: translateY(1px); }
 .map-controls .locate-button.is-active { color: #fff; background: #087fcb; }
 
+.north-indicator {
+  position: absolute;
+  z-index: 2;
+  top: 1rem;
+  right: max(1rem, env(safe-area-inset-right));
+}
+
+.north-button {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border: 1px solid rgb(9 42 59 / 30%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 2px 9px rgb(0 27 38 / 24%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.north-button svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  transition: transform 120ms linear;
+}
+
+.north-button:hover { background: #e8f6f7; }
+.north-button:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
+.north-button:active { transform: translateY(1px); }
+
 .location-status {
   position: absolute;
   z-index: 2;
@@ -359,6 +390,7 @@ button { font: inherit; }
     top: 1rem;
     max-width: calc(100% - 8rem);
   }
+  .north-indicator { top: 0.75rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
