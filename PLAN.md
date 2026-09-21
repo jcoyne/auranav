@@ -70,8 +70,9 @@ Acceptance: the map remains interactive on desktop and a touch viewport, does no
 - [x] Add explicit locate and follow controls using the browser Geolocation API.
 - [x] Display position, accuracy circle, timestamp, and stale-fix state.
 - [x] Handle unsupported, denied, unavailable, and timed-out location states.
+- [x] Record a GPS track: sample every 15 s to capped localStorage polylines, draw it in yellow, and toggle or clear it from the drawer.
 
-Acceptance: automated tests cover each location state; stopping follow mode releases the geolocation watch.
+Acceptance: automated tests cover each location state; the geolocation watch runs while follow mode or track recording needs it and is released once neither does; turning off the track stops sampling and hides the line; a location failure stops recording visibly instead of logging nothing.
 
 ### M4: Offline installation
 

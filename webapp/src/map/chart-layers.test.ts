@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { ChartPackageManifest } from "../chart-package";
 import { addPackageChartLayers } from "./chart-layers";
+import { LIGHT_FLARE_PIXEL_RATIO, lightFlareIconExpression } from "./light-icon";
 
 describe("package chart layers", () => {
   it("adds cells lazily and hides previously selected cells", () => {
@@ -137,6 +138,7 @@ describe("package chart layers", () => {
       addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
       getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
       getCanvas: vi.fn(() => document.createElement("canvas")),
+      hasImage: vi.fn(() => false), addImage: vi.fn(),
     } as unknown as MapLibreMap;
     const chartManifest = manifest();
     chartManifest.tileSets[0]!.layers = ["coastline", "light"];
@@ -150,23 +152,28 @@ describe("package chart layers", () => {
       "source-layer": "light",
       paint: expect.objectContaining({ "circle-radius": 16 }),
     }), undefined);
+    expect(map.addImage).toHaveBeenCalledWith(
+      "light-flare-red",
+      expect.objectContaining({ data: expect.any(Uint8Array) }),
+      { pixelRatio: LIGHT_FLARE_PIXEL_RATIO },
+    );
     expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
       id: "chart-light-symbol-0",
       type: "symbol",
       "source-layer": "light",
       layout: expect.objectContaining({
-        "text-field": "✦",
-        "text-allow-overlap": true,
-        "text-ignore-placement": true,
+        "icon-image": lightFlareIconExpression(),
+        "icon-anchor": "bottom-left",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       }),
-      paint: expect.objectContaining({ "text-color": "#b00078" }),
     }), undefined);
     expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
       id: "chart-light-label-0",
       type: "symbol",
       "source-layer": "light",
       layout: expect.objectContaining({
-        "text-variable-anchor": ["left", "right", "top", "bottom", "top-left", "top-right"],
+        "text-variable-anchor": ["right", "top-right", "top", "top-left", "bottom-right", "left"],
         "text-radial-offset": 1,
         "text-allow-overlap": false,
       }),

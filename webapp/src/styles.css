@@ -379,6 +379,32 @@ button { font: inherit; }
 .offline-actions button.secondary { color: #075c92; background: #fff; }
 .offline-actions button:disabled { opacity: 0.55; cursor: wait; }
 
+.settings-panel .track-status {
+  margin: 0.45rem 0 0;
+  color: #1c3d4e;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.settings-panel .track-note { margin: 0.45rem 0 0; color: #526872; font-size: 0.72rem; line-height: 1.35; }
+
+.settings-panel .track-error {
+  margin: 0.45rem 0 0;
+  color: #8a251d;
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.settings-panel .offline-actions button:disabled { cursor: not-allowed; }
+
+.settings-panel .track-confirm {
+  margin: 0.7rem 0 0;
+  color: #8a2b06;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
 .settings-panel {
   padding-top: 0.9rem;
   border-top: 1px solid rgb(9 42 59 / 18%);

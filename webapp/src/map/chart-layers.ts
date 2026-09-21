@@ -12,6 +12,7 @@ import {
 } from "./demo-chart";
 import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
 import { formatLightDetailsList } from "./light";
+import { addLightFlareImages, lightFlareIconExpression } from "./light-icon";
 
 export const DEMO_SOURCE_IDS = {
   coastline: "demo-coastline",
@@ -239,6 +240,7 @@ function addVectorLayers(
     layerIds.push(hitLayerId);
 
     const symbolLayerId = `chart-light-symbol-${index}`;
+    addLightFlareImages(map);
     map.addLayer({
       id: symbolLayerId,
       type: "symbol",
@@ -246,18 +248,13 @@ function addVectorLayers(
       "source-layer": "light",
       minzoom: 8,
       layout: {
-        // Keep the magenta light flare visible even when its descriptive
-        // label collides with another chart annotation.
-        "text-field": "✦",
-        "text-font": ["Noto Sans Regular"],
-        "text-size": 16,
-        "text-allow-overlap": true,
-        "text-ignore-placement": true,
-      },
-      paint: {
-        "text-color": "#b00078",
-        "text-halo-color": "#f5fbfc",
-        "text-halo-width": 1.5,
+        "icon-image": lightFlareIconExpression(),
+        // The flare's sharp tip is the charted light position.
+        "icon-anchor": "bottom-left",
+        // Keep the flare visible even when its descriptive label collides
+        // with another chart annotation.
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     }, beforeId);
     layerIds.push(symbolLayerId);
@@ -273,7 +270,8 @@ function addVectorLayers(
         "text-field": lightLabelExpression(),
         "text-font": ["Noto Sans Regular"],
         "text-size": 12,
-        "text-variable-anchor": ["left", "right", "top", "bottom", "top-left", "top-right"],
+        // Prefer the anchors that keep the label clear of the flare above and right of the light.
+        "text-variable-anchor": ["right", "top-right", "top", "top-left", "bottom-right", "left"],
         "text-radial-offset": 1,
         "text-allow-overlap": false,
         "text-padding": 4,

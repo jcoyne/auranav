@@ -11,6 +11,9 @@ import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
 import { displayScaleDenominator, evaluateChartScale } from "./map/chart-scale";
 import { selectChartCells } from "./map/cell-selection";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
+import { addTrackLayer, setTrackLayerVisible, updateTrackLayer } from "./map/track-layer";
+import { TrackRecorder, type TrackRecorderState } from "./track/track-recorder";
+import { trackDistanceMetres, trackPointCount } from "./track/track-store";
 import { OfflineControls } from "./offline/offline-controls";
 import { cleanupInactivePackages, readOfflineManifest } from "./offline/chart-store";
 import {
@@ -21,6 +24,7 @@ import {
 } from "./ui/location-status";
 import { Drawer } from "./ui/drawer";
 import { renderDisplaySettings } from "./ui/display-settings";
+import { TrackSettingsView, type TrackSettingsState } from "./ui/track-settings";
 import { readMapSettings, writeMapSettings } from "./ui/map-settings";
 import {
   createScaleStatusView,
@@ -38,6 +42,7 @@ const locationStatusElement = requiredElement("location-status");
 const scaleStatusElement = requiredElement("scale-status");
 const offlinePanelElement = requiredElement("offline-panel");
 const displaySettingsElement = requiredElement("display-settings");
+const trackSettingsElement = requiredElement("track-settings");
 const drawer = new Drawer({
   panel: requiredElement("drawer"),
   toggle: requiredButton("drawer-toggle"),
@@ -56,20 +61,23 @@ const mapLoaded = new Promise<void>((resolve) => map.once("load", () => resolve(
 let controls: MapControls;
 let latestPosition: GeolocationPosition | undefined;
 let stalePositionTimer: number | undefined;
+let trackNotice: string | undefined;
+let trackLayerReady = false;
+// The toggle carries one badge, so each source of trouble is tracked separately and a
+// resolved track failure cannot clear a chart failure that is still unresolved.
+let chartAlert: string | undefined;
+let trackAlert: string | undefined;
 
 const tracker = new PositionTracker(navigator.geolocation, (state) => handlePositionState(state));
+const trackRecorder = new TrackRecorder({ onChange: (state) => handleTrackChange(state) });
 
 let mapSettings = readMapSettings();
 
 controls = new MapControls(controlsElement, {
   map,
   onFollowChange(following) {
-    if (following) {
-      if (latestPosition) centerMapOn(map, latestPosition);
-      tracker.start();
-    } else {
-      tracker.stop();
-    }
+    if (following && latestPosition) centerMapOn(map, latestPosition);
+    syncPositionWatch();
   },
 });
 
@@ -83,12 +91,35 @@ renderDisplaySettings(displaySettingsElement, {
   },
 });
 
+const trackSettings = new TrackSettingsView(trackSettingsElement, {
+  onRecordingChange(recording) {
+    trackNotice = undefined;
+    trackAlert = undefined;
+    refreshDrawerAlert();
+    mapSettings = { ...mapSettings, showTrack: recording };
+    writeMapSettings(mapSettings);
+    if (recording) trackRecorder.start(); else trackRecorder.stop();
+    // Recording is the only reason the receiver stays on once the map stops following.
+    syncPositionWatch();
+  },
+  onClear() {
+    trackRecorder.clear();
+  },
+});
+trackSettings.render(trackSettingsState(trackRecorder.state));
+if (mapSettings.showTrack) {
+  // A reload part-way through a trip resumes recording rather than leaving a hole in the track.
+  trackRecorder.start();
+  syncPositionWatch();
+}
+
 new NorthIndicator(northIndicatorElement, map);
 
 map.on("dragstart", () => {
   if (!controls.isFollowing) return;
   controls.setFollowing(false);
-  tracker.stop(false);
+  // Panning away only ends the follow; a recording in progress keeps the receiver on.
+  syncPositionWatch(false);
   renderLatestPosition();
 });
 
@@ -168,10 +199,16 @@ async function initializeChart(): Promise<void> {
     renderChartError(chartStatusElement, error instanceof Error ? error.message : "Unknown chart package error");
     // The drawer hides the chart panel by default, so a package that failed to load has to
     // announce itself instead of waiting for the user to open the menu.
-    drawer.setAlert("Chart package unavailable");
+    chartAlert = "Chart package unavailable";
+    refreshDrawerAlert();
     drawer.open();
   } finally {
     await mapLoaded;
+    // Added before the position layer so the fix and its accuracy circle draw over the track.
+    addTrackLayer(map);
+    trackLayerReady = true;
+    updateTrackLayer(map, trackRecorder.state.track);
+    setTrackLayerVisible(map, trackRecorder.isRecording);
     addPositionLayer(map);
     if (latestPosition) updatePositionLayer(map, latestPosition, isPositionStale(latestPosition));
   }
@@ -192,35 +229,94 @@ function handlePositionState(state: PositionState): void {
       break;
     case "tracking": {
       latestPosition = state.position;
+      trackRecorder.positionUpdated(state.position);
       if (controls.isFollowing) centerMapOn(map, state.position);
       renderLatestPosition();
       break;
     }
     case "unsupported":
       controls.setFollowing(false);
+      stopRecordingAfterPositionFailure("this browser does not support location services");
       renderPositionFailure("This browser does not support location services.");
       break;
     case "denied":
       tracker.stop(false);
       controls.setFollowing(false);
+      stopRecordingAfterPositionFailure("location permission was denied");
       renderPositionFailure("Location permission was denied. Enable it in browser settings to show your position.");
       break;
     case "unavailable":
       tracker.stop(false);
       controls.setFollowing(false);
+      stopRecordingAfterPositionFailure("no GPS position is available");
       renderPositionFailure("A GPS position is currently unavailable.");
       break;
     case "timeout":
       tracker.stop(false);
       controls.setFollowing(false);
+      stopRecordingAfterPositionFailure("the location request timed out");
       renderPositionFailure("The location request timed out. Try again with a clearer view of the sky.");
       break;
     case "error":
       tracker.stop(false);
       controls.setFollowing(false);
+      stopRecordingAfterPositionFailure(state.message);
       renderPositionFailure(`Location failed: ${state.message}`);
       break;
   }
+}
+
+/** The watch runs while the map is following, while the track is recording, or both. */
+function syncPositionWatch(announce = true): void {
+  const needed = controls.isFollowing || trackRecorder.isRecording;
+  if (needed && !tracker.isTracking) {
+    tracker.start();
+    return;
+  }
+  if (!needed && tracker.isTracking) {
+    tracker.stop(announce);
+    return;
+  }
+  // The watch is already in the right state, but the follow label has changed.
+  if (announce) renderLatestPosition();
+}
+
+function handleTrackChange(state: TrackRecorderState): void {
+  if (trackLayerReady) {
+    updateTrackLayer(map, state.track);
+    setTrackLayerVisible(map, state.recording);
+  }
+  trackSettings.render(trackSettingsState(state));
+}
+
+function trackSettingsState(state: TrackRecorderState): TrackSettingsState {
+  return {
+    recording: state.recording,
+    pointCount: trackPointCount(state.track),
+    distanceMetres: trackDistanceMetres(state.track),
+    trimmed: state.track.trimmed,
+    storageFailed: state.storageFailed,
+    notice: trackNotice,
+  };
+}
+
+/**
+ * Recording cannot continue without fixes, and the failures above all clear the watch.
+ * Stopping loudly is better than a track that quietly records nothing for hours.
+ */
+function stopRecordingAfterPositionFailure(reason: string): void {
+  trackRecorder.positionLost();
+  if (!trackRecorder.isRecording) return;
+  trackNotice = `Track recording stopped because ${reason}. The recorded track is still saved.`;
+  mapSettings = { ...mapSettings, showTrack: false };
+  writeMapSettings(mapSettings);
+  trackRecorder.stop();
+  trackAlert = "Track recording stopped";
+  refreshDrawerAlert();
+}
+
+function refreshDrawerAlert(): void {
+  drawer.setAlert(chartAlert ?? trackAlert);
 }
 
 function renderPositionFailure(message: string): void {

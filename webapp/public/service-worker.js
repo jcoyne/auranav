@@ -3,7 +3,7 @@
 // and recache the shell; a byte-identical script is never reinstalled.
 const SHELL_CACHE = "chartplotter-shell-__BUILD_ID__";
 const BASE = new URL("./", self.registration.scope);
-const STATIC_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./app-icon-192.png", "./app-icon-512.png", "./fonts/Noto%20Sans%20Regular/0-255.pbf", "./fonts/Noto%20Sans%20Regular/9984-10239.pbf", "./fonts/OFL.txt", "./fonts/README.txt"];
+const STATIC_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./app-icon-192.png", "./app-icon-512.png", "./fonts/Noto%20Sans%20Regular/0-255.pbf", "./fonts/OFL.txt", "./fonts/README.txt"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {

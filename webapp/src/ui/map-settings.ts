@@ -7,9 +7,14 @@ export type MapSettings = {
    * available through MapLibre's own arrow and +/- handling either way.
    */
   showPanZoomButtons: boolean;
+  /**
+   * Recording the track keeps the GPS receiver running, so the preference is remembered:
+   * a reload part-way through a trip resumes the recording instead of losing the rest of it.
+   */
+  showTrack: boolean;
 };
 
-const DEFAULTS: MapSettings = { showPanZoomButtons: false };
+const DEFAULTS: MapSettings = { showPanZoomButtons: false, showTrack: false };
 
 export function readMapSettings(): MapSettings {
   try {
@@ -20,6 +25,7 @@ export function readMapSettings(): MapSettings {
       showPanZoomButtons: typeof stored.showPanZoomButtons === "boolean"
         ? stored.showPanZoomButtons
         : DEFAULTS.showPanZoomButtons,
+      showTrack: typeof stored.showTrack === "boolean" ? stored.showTrack : DEFAULTS.showTrack,
     };
   } catch {
     return { ...DEFAULTS };

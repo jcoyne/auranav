@@ -11,21 +11,28 @@ describe("map settings", () => {
     expect(readMapSettings().showPanZoomButtons).toBe(false);
   });
 
-  it("round-trips a stored preference", () => {
-    writeMapSettings({ showPanZoomButtons: true });
-    expect(readMapSettings().showPanZoomButtons).toBe(true);
+  it("leaves track recording off until the user opts in", () => {
+    expect(readMapSettings().showTrack).toBe(false);
+  });
+
+  it("round-trips stored preferences", () => {
+    writeMapSettings({ showPanZoomButtons: true, showTrack: true });
+    expect(readMapSettings()).toEqual({ showPanZoomButtons: true, showTrack: true });
   });
 
   it("falls back to the default for unreadable or malformed storage", () => {
     localStorage.setItem("chartplotter.map-settings.v1", "not json");
     expect(readMapSettings().showPanZoomButtons).toBe(false);
 
-    localStorage.setItem("chartplotter.map-settings.v1", JSON.stringify({ showPanZoomButtons: "yes" }));
-    expect(readMapSettings().showPanZoomButtons).toBe(false);
+    localStorage.setItem(
+      "chartplotter.map-settings.v1",
+      JSON.stringify({ showPanZoomButtons: "yes", showTrack: 1 }),
+    );
+    expect(readMapSettings()).toEqual({ showPanZoomButtons: false, showTrack: false });
   });
 
   it("keeps working when the browser refuses to store the preference", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
-    expect(() => writeMapSettings({ showPanZoomButtons: true })).not.toThrow();
+    expect(() => writeMapSettings({ showPanZoomButtons: true, showTrack: true })).not.toThrow();
   });
 });
