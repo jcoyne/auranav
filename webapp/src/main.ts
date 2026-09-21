@@ -18,6 +18,7 @@ import {
   renderLocationMessage,
   renderPositionStatus,
 } from "./ui/location-status";
+import { Drawer } from "./ui/drawer";
 import {
   renderChartError,
   renderChartLoading,
@@ -31,13 +32,13 @@ const controlsElement = requiredElement("map-controls");
 const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
 const scaleStatusElement = requiredElement("scale-status");
-const offlineToggleElement = requiredButton("offline-toggle");
 const offlinePanelElement = requiredElement("offline-panel");
-
-offlineToggleElement.addEventListener("click", () => {
-  const expanded = offlineToggleElement.getAttribute("aria-expanded") !== "true";
-  offlineToggleElement.setAttribute("aria-expanded", String(expanded));
-  offlinePanelElement.hidden = !expanded;
+const drawer = new Drawer({
+  panel: requiredElement("drawer"),
+  toggle: requiredButton("drawer-toggle"),
+  close: requiredButton("drawer-close"),
+  scrim: requiredElement("drawer-scrim"),
+  alert: requiredElement("drawer-alert"),
 });
 const offlineAppReady = "serviceWorker" in navigator && import.meta.env.PROD
   ? navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`, { scope: import.meta.env.BASE_URL })
@@ -148,6 +149,10 @@ async function initializeChart(): Promise<void> {
   } catch (error) {
     await mapLoaded;
     renderChartError(chartStatusElement, error instanceof Error ? error.message : "Unknown chart package error");
+    // The drawer hides the chart panel by default, so a package that failed to load has to
+    // announce itself instead of waiting for the user to open the menu.
+    drawer.setAlert("Chart package unavailable");
+    drawer.open();
   } finally {
     await mapLoaded;
     addPositionLayer(map);

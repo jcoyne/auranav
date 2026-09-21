@@ -28,9 +28,9 @@ Chart labels use two locally packaged Noto Sans Regular glyph ranges, so labels 
 
 ## Offline packages
 
-Production builds register a service worker that caches the application shell, local glyphs, and install metadata. Open **Offline** and choose **Download charts** to copy the manifest, NOAA user agreement, and every PMTiles archive into the browser's Origin Private File System (OPFS). Each archive is downloaded completely, checked against its reported content length when available, and opened as PMTiles before the package is activated. The viewer then reads PMTiles byte ranges directly from OPFS; it does not depend on which map areas were viewed while online.
+Production builds register a service worker that caches the application shell, local glyphs, and install metadata. Open **Charts** in the header and choose **Download charts** to copy the manifest, NOAA user agreement, and every PMTiles archive into the browser's Origin Private File System (OPFS). Each archive is downloaded completely, checked against its reported content length when available, and opened as PMTiles before the package is activated. The viewer then reads PMTiles byte ranges directly from OPFS; it does not depend on which map areas were viewed while online.
 
-The panel reports progress, space usage, package date, and whether the browser granted persistent storage. Package replacement is staged under a unique version directory and activated by one local pointer update, so an interrupted update retains the previous package. If an online manifest request fails, the active package's colocated manifest is used. Update and remove controls are explicit, and storage/download failures remain visible. A reload after downloading switches already-created map sources to the saved files.
+The drawer's offline section reports progress, space usage, package date, and whether the browser granted persistent storage. Package replacement is staged under a unique version directory and activated by one local pointer update, so an interrupted update retains the previous package. If an online manifest request fails, the active package's colocated manifest is used. Update and remove controls are explicit, and storage/download failures remain visible. A reload after downloading switches already-created map sources to the saved files.
 
 OPFS, service workers, installability, and persistent storage require a secure production origin (HTTPS, except localhost) and browser support. Persistence is browser-controlled; the UI reports the result rather than promising that best-effort data cannot be evicted. Development mode intentionally does not register the service worker, preventing cached source modules from interfering with Vite.
 
@@ -56,7 +56,9 @@ Or run the corresponding workspace commands from the repository root.
 - `src/map/` creates the MapLibre map, PMTiles or preview chart layers, and GPS accuracy/position layers.
 - `src/gps/` owns the browser geolocation watch and translates browser errors into explicit application states.
 - `src/controls/` provides accessible directional pan, zoom, and location-follow buttons.
-- `src/ui/` renders chart provenance and visible location status.
+- `src/ui/` renders chart provenance and visible location status, and owns the sliding drawer that
+  holds the chart provenance and offline sections so neither covers the map on a phone. A chart
+  package failure sets an alert badge on the drawer toggle and opens the drawer.
 
 ## Product constraints
 
