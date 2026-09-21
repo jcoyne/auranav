@@ -37,15 +37,45 @@ describe("NorthIndicator", () => {
     expect(button().classList.contains("is-north-up")).toBe(false);
   });
 
+  it("crosses north by the shortest turn instead of sweeping back through south", () => {
+    new NorthIndicator(container, map);
+    bearing = 300;
+    rotated?.();
+    expect(needle().style.transform).toBe("rotate(60deg)");
+
+    bearing = 10;
+    rotated?.();
+
+    // 60° to -10° is a 70° turn through north; the equivalent -350° would pass through south.
+    expect(needle().style.transform).toBe("rotate(-10deg)");
+
+    bearing = 300;
+    rotated?.();
+    expect(needle().style.transform).toBe("rotate(60deg)");
+  });
+
+  it("accumulates angle across repeated turns in one direction", () => {
+    new NorthIndicator(container, map);
+
+    for (const next of [90, 180, 270, 0]) {
+      bearing = next;
+      rotated?.();
+    }
+
+    // Four quarter-turns the same way keep unwinding rather than snapping back to zero.
+    expect(needle().style.transform).toBe("rotate(-360deg)");
+  });
+
   it("normalizes bearings outside 0–360", () => {
     new NorthIndicator(container, map);
 
     bearing = -45;
     rotated?.();
-    expect(needle().style.transform).toBe("rotate(-315deg)");
+    expect(needle().style.transform).toBe("rotate(45deg)");
 
     bearing = 359.9;
     rotated?.();
+    expect(needle().style.transform).toBe("rotate(0.1deg)");
     expect(button().classList.contains("is-north-up")).toBe(true);
   });
 

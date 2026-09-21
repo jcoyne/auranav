@@ -24,6 +24,12 @@ export class NorthIndicator {
   readonly #map: RotatableMap;
   readonly #button: HTMLButtonElement;
   readonly #needle: SVGElement;
+  /**
+   * The needle's accumulated angle, deliberately not wrapped to 0–360. CSS interpolates
+   * `rotate()` numerically, so wrapping would send the needle the long way round whenever the
+   * bearing crosses north — 300° to 10° would sweep back through south instead of through north.
+   */
+  #rotation = 0;
 
   constructor(container: HTMLElement, map: RotatableMap) {
     this.#map = map;
@@ -45,7 +51,8 @@ export class NorthIndicator {
     const bearing = normalizeBearing(this.#map.getBearing());
     const isNorthUp = bearing <= NORTH_TOLERANCE_DEGREES || bearing >= 360 - NORTH_TOLERANCE_DEGREES;
     // The map turns under the needle: at a bearing of 90° east is up, so north lies to the left.
-    this.#needle.style.transform = `rotate(${-bearing}deg)`;
+    this.#rotation += shortestTurn(this.#rotation, -bearing);
+    this.#needle.style.transform = `rotate(${round(this.#rotation)}deg)`;
     this.#button.classList.toggle("is-north-up", isNorthUp);
     const label = isNorthUp
       ? "Map is oriented north up"
@@ -58,4 +65,16 @@ export class NorthIndicator {
 function normalizeBearing(bearing: number): number {
   if (!Number.isFinite(bearing)) return 0;
   return ((bearing % 360) + 360) % 360;
+}
+
+/** The signed turn from one angle to an equivalent of the other, never more than half a circle. */
+function shortestTurn(from: number, to: number): number {
+  const turn = (to - from) % 360;
+  if (turn > 180) return turn - 360;
+  if (turn < -180) return turn + 360;
+  return turn;
+}
+
+function round(degrees: number): number {
+  return Math.round(degrees * 100) / 100;
 }
