@@ -20,11 +20,11 @@ import {
 } from "./ui/location-status";
 import { Drawer } from "./ui/drawer";
 import {
+  createScaleStatusView,
   renderChartError,
   renderChartLoading,
   renderChartStatus,
   renderPackageChartStatus,
-  renderScaleStatus,
 } from "./ui/chart-status";
 
 const mapElement = requiredElement("map");
@@ -118,6 +118,7 @@ async function initializeChart(): Promise<void> {
       .every((tileSet) => tileSet.layers.includes("coverage"));
     const [west, south, east, north] = manifest.bounds;
     renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
+    const showScaleStatus = createScaleStatusView(scaleStatusElement);
     let selectedCells = [] as typeof manifest.cells;
     const updateScaleStatus = (): void => {
       const center = map.getCenter();
@@ -125,10 +126,7 @@ async function initializeChart(): Promise<void> {
       const statusCells = exactlyCoveredCellNames === undefined
         ? selectedCells
         : selectedCells.filter((cell) => exactlyCoveredCellNames.includes(cell.name));
-      renderScaleStatus(
-        scaleStatusElement,
-        evaluateChartScale(statusCells, map.getZoom(), center.lng, center.lat),
-      );
+      showScaleStatus(evaluateChartScale(statusCells, map.getZoom(), center.lng, center.lat));
     };
     const updateChartView = (): void => {
       const center = map.getCenter();

@@ -101,19 +101,35 @@ function displayUnitLabel(unit: ChartPackageManifest["depth"]["displayUnit"]): s
   return "metres";
 }
 
-export function renderScaleStatus(container: HTMLElement, state: ChartScaleState): void {
-  if (state.kind === "outside-coverage") {
-    container.textContent = "Outside chart coverage";
-    container.hidden = false;
-    return;
-  }
+/**
+ * Shows chart coverage gaps in the map overlay and reports overscale to the console.
+ *
+ * Overscale is a routine consequence of zooming past a cell's compilation scale, so a
+ * persistent banner costs more screen space than it earns on a phone. Losing coverage,
+ * by contrast, means nothing is drawn and has to stay visible.
+ */
+export function createScaleStatusView(
+  container: HTMLElement,
+  log: (message: string) => void = (message) => console.info(message),
+): (state: ChartScaleState) => void {
+  let lastOverscaleMessage: string | undefined;
 
-  if (state.overscaleFactor <= 1) {
+  return (state) => {
+    if (state.kind === "outside-coverage") {
+      lastOverscaleMessage = undefined;
+      container.textContent = "Outside chart coverage";
+      container.hidden = false;
+      return;
+    }
+
     container.textContent = "";
     container.hidden = true;
-    return;
-  }
 
-  container.textContent = `Overscale ×${state.overscaleFactor.toFixed(1)} · ${state.cell.name} compiled at 1:${state.cell.compilationScale.toLocaleString()}`;
-  container.hidden = false;
+    const message = state.overscaleFactor > 1
+      ? `Overscale ×${state.overscaleFactor.toFixed(1)} · ${state.cell.name} compiled at 1:${state.cell.compilationScale.toLocaleString()}`
+      : undefined;
+    if (message === lastOverscaleMessage) return;
+    lastOverscaleMessage = message;
+    if (message !== undefined) log(message);
+  };
 }

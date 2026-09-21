@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChartPackageManifest } from "../chart-package";
-import { renderPackageChartStatus, renderScaleStatus } from "./chart-status";
+import { createScaleStatusView, renderPackageChartStatus } from "./chart-status";
 
 const manifest: ChartPackageManifest = {
   schemaVersion: 1,
@@ -57,31 +57,29 @@ describe("renderPackageChartStatus", () => {
     expect(container.querySelector("a")?.href).toBe("https://example.test/charts/USER_AGREEMENT.txt");
   });
 
-  it("shows overscale and coverage warnings only when needed", () => {
+  it("logs overscale instead of showing it, and keeps coverage gaps on screen", () => {
     const container = document.createElement("section");
+    const logged: string[] = [];
+    const showScaleStatus = createScaleStatusView(container, (message) => logged.push(message));
     const cell = manifest.cells[0];
     if (!cell) throw new Error("Expected fixture cell");
 
-    renderScaleStatus(container, {
-      kind: "covered",
-      cell,
-      displayScale: 45_000,
-      overscaleFactor: 2,
-    });
-    expect(container.hidden).toBe(false);
-    expect(container.textContent).toBe("Overscale ×2.0 · US4WI1DP compiled at 1:90,000");
-
-    renderScaleStatus(container, {
-      kind: "covered",
-      cell,
-      displayScale: 90_000,
-      overscaleFactor: 1,
-    });
+    showScaleStatus({ kind: "covered", cell, displayScale: 45_000, overscaleFactor: 2 });
     expect(container.hidden).toBe(true);
+    expect(container.textContent).toBe("");
+    expect(logged).toEqual(["Overscale \u00d72.0 \u00b7 US4WI1DP compiled at 1:90,000"]);
 
-    renderScaleStatus(container, { kind: "outside-coverage", displayScale: 90_000 });
+    showScaleStatus({ kind: "covered", cell, displayScale: 45_000, overscaleFactor: 2 });
+    expect(logged).toHaveLength(1);
+
+    showScaleStatus({ kind: "covered", cell, displayScale: 90_000, overscaleFactor: 1 });
+    expect(container.hidden).toBe(true);
+    expect(logged).toHaveLength(1);
+
+    showScaleStatus({ kind: "outside-coverage", displayScale: 90_000 });
     expect(container.textContent).toBe("Outside chart coverage");
     expect(container.hidden).toBe(false);
+    expect(logged).toHaveLength(1);
   });
 
   it("summarizes large multi-cell packages instead of listing every cell", () => {

@@ -56,7 +56,7 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 
 - [x] Render shoreline, depth areas, contours, and soundings from generated packages.
 - [x] Support mouse/touch pan, wheel/pinch zoom, and visible pan/zoom controls.
-- [x] Show an overscale warning and detect when the map center leaves chart coverage.
+- [x] Log overscale to the console and show an on-map warning when the map center leaves chart coverage.
 - [x] Select a usage band by display scale and retain coarser fallback coverage beneath it.
 - [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
 - [x] Render navigation lights with conventional characteristic, color, period, height, and range labels.
