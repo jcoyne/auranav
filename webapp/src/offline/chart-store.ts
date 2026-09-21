@@ -1,6 +1,6 @@
 import type { ChartPackageManifest } from "../chart-package";
 import { resolvePackageAssetUrl } from "../chart-package-url";
-import type { RangeResponse, Source } from "pmtiles";
+import type { Header, RangeResponse, Source } from "pmtiles";
 import { FetchSource, FileSource, PMTiles } from "pmtiles";
 
 const RECORDS_KEY = "chartplotter.offline-packages.v1";
@@ -126,7 +126,7 @@ export async function downloadChartPackage(
           progress({ completedFiles: index, totalFiles: urls.length + 1, completedBytes: completedBytes + fileBytes, currentFile: tileSets[index]?.cellName ?? name });
         }
         await writable.close();
-        const expectedBytes = contentLength(response.headers);
+        const expectedBytes = decodedContentLength(response.headers);
         if (expectedBytes !== undefined && expectedBytes !== fileBytes) {
           throw new Error(`Chart download was incomplete for ${tileSets[index]?.cellName ?? url.href}.`);
         }
@@ -134,9 +134,13 @@ export async function downloadChartPackage(
         await writable.abort().catch(() => undefined);
         throw error;
       }
+      const file = await fileHandle.getFile();
+      const header = await new PMTiles(new FileSource(file)).getHeader();
+      if (archiveExtent(header) > file.size) {
+        throw new Error(`Chart download was incomplete for ${tileSets[index]?.cellName ?? url.href}.`);
+      }
       completedBytes += fileBytes;
       files.push({ url: url.href, name, bytes: fileBytes });
-      await new PMTiles(new FileSource(await fileHandle.getFile())).getHeader();
     }
 
     progress({ completedFiles: urls.length, totalFiles: urls.length + 1, completedBytes, currentFile: "Usage agreement" });
@@ -267,11 +271,29 @@ function uniqueSuffix(): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
-function contentLength(headers: Headers): number | undefined {
+// Content-Length describes the bytes on the wire, while fetch hands back a decoded
+// body. A host that applies transfer compression to .pmtiles (GitHub Pages gzips
+// application/octet-stream) therefore reports a length smaller than the file that
+// gets written, so the header is only a completeness signal for an unencoded body.
+// Archive extents are checked separately, which covers truncation either way.
+function decodedContentLength(headers: Headers): number | undefined {
+  const encoding = headers.get("content-encoding");
+  if (encoding !== null && encoding.trim().toLowerCase() !== "identity") return undefined;
   const header = headers.get("content-length");
   if (header === null) return undefined;
   const value = Number(header);
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+// The last byte any section of a PMTiles archive claims. A truncated download
+// still parses as a header, so compare this with the size actually stored.
+function archiveExtent(header: Header): number {
+  return Math.max(
+    header.rootDirectoryOffset + header.rootDirectoryLength,
+    header.jsonMetadataOffset + header.jsonMetadataLength,
+    header.leafDirectoryOffset + (header.leafDirectoryLength ?? 0),
+    header.tileDataOffset + (header.tileDataLength ?? 0),
+  ) || 0;
 }
 
 async function downloadSmallFile(directory: FileSystemDirectoryHandle, name: string, url: URL): Promise<void> {

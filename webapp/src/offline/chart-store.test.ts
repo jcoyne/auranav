@@ -109,6 +109,32 @@ describe("offline chart records", () => {
     expect(await verifyOfflinePackage(record)).toBe(true);
   });
 
+  it("accepts an archive whose Content-Length describes a compressed transfer", async () => {
+    // A static host may gzip .pmtiles, and fetch hands back the decoded body, so the
+    // header describes fewer bytes than the download legitimately writes.
+    vi.spyOn(PMTiles.prototype, "getHeader").mockResolvedValue(pmtilesHeader(4));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => String(input).endsWith("USER_AGREEMENT.txt")
+      ? new Response("NOAA terms")
+      : new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "content-length": "2", "content-encoding": "gzip" } }));
+
+    const record = await downloadChartPackage(manifest, manifestUrl, vi.fn());
+
+    expect(record.files).toEqual([{ url: "https://example.test/charts/cell.pmtiles", name: "0000.pmtiles", bytes: 4 }]);
+    expect(offlinePackageFor(manifestUrl)).toEqual(record);
+  });
+
+  it("rejects an archive that stops short of the extent its header claims", async () => {
+    vi.spyOn(PMTiles.prototype, "getHeader").mockResolvedValue(pmtilesHeader(64));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => String(input).endsWith("USER_AGREEMENT.txt")
+      ? new Response("NOAA terms")
+      : new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "content-encoding": "gzip" } }));
+
+    await expect(downloadChartPackage(manifest, manifestUrl, vi.fn())).rejects.toThrow("incomplete");
+
+    expect(offlinePackageFor(manifestUrl)).toBeUndefined();
+    expect([...root.directory("chartplotter").directory("packages").directories.keys()]).toEqual([]);
+  });
+
   it("detects a truncated saved archive and cleans abandoned staging directories", async () => {
     const active = savedRecord("active-version", 10);
     localStorage.setItem(recordKey, JSON.stringify([active]));
@@ -159,6 +185,20 @@ const manifest: ChartPackageManifest = {
     layers: ["coverage"],
   }],
 };
+
+// A header whose sections all end at `extent`, the smallest archive size it describes.
+function pmtilesHeader(extent: number): Awaited<ReturnType<PMTiles["getHeader"]>> {
+  return {
+    rootDirectoryOffset: 0,
+    rootDirectoryLength: extent,
+    jsonMetadataOffset: 0,
+    jsonMetadataLength: extent,
+    leafDirectoryOffset: 0,
+    leafDirectoryLength: extent,
+    tileDataOffset: 0,
+    tileDataLength: extent,
+  } as Awaited<ReturnType<PMTiles["getHeader"]>>;
+}
 
 function savedRecord(directory: string, bytes: number): OfflinePackageRecord {
   return {
