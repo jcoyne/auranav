@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { LayerSpecification, Map as MapLibreMap } from "maplibre-gl";
+import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { ChartPackageManifest } from "../chart-package";
+import { TILE_LAYERS } from "../chart-package";
 import { addPackageChartLayers } from "./chart-layers";
+import { landLabelFilter } from "./land";
 import { LIGHT_FLARE_PIXEL_RATIO, lightFlareIconExpression } from "./light-icon";
 
 describe("package chart layers", () => {
@@ -179,6 +182,85 @@ describe("package chart layers", () => {
       }),
     }), undefined);
     expect(map.on).toHaveBeenCalledWith("click", "chart-light-hit-0", expect.any(Function));
+  });
+
+
+  it("fills land areas under the coastline and labels them above the chart", () => {
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
+      getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["depth-area", "land-area", "coastline", "land-label"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-land-area-0",
+      type: "fill",
+      "source-layer": "land-area",
+      paint: expect.objectContaining({ "fill-opacity": 1 }),
+    }), undefined);
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({
+      id: "chart-land-label-0",
+      type: "symbol",
+      "source-layer": "land-label",
+      filter: landLabelFilter(),
+      layout: expect.objectContaining({ "text-field": ["get", "name"] }),
+    }), undefined);
+
+    const order = vi.mocked(map.addLayer).mock.calls.map(([layer]) => layer.id);
+    expect(order).toEqual([
+      "chart-depth-area-0", "chart-land-area-0", "chart-coastline-0", "chart-land-label-0",
+    ]);
+  });
+
+
+  it("labels landforms from the finest visible band only", () => {
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
+      getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets = chartManifest.tileSets.map((tileSet) => ({
+      ...tileSet,
+      layers: ["land-area", "land-label"],
+    }));
+
+    // Band 4 is the coarse fallback kept beneath the selected band 5.
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA", "US5BBBBB"]);
+
+    expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-land-label-0", "visibility", "none");
+    expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-land-area-0", "visibility", "visible");
+    expect(map.setLayoutProperty).toHaveBeenCalledWith("chart-land-label-1", "visibility", "visible");
+  });
+
+
+  it("produces layer specifications MapLibre accepts", () => {
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
+      getLayer: vi.fn(), isSourceLoaded: vi.fn(() => true), on: vi.fn(),
+      getCanvas: vi.fn(() => document.createElement("canvas")),
+      hasImage: vi.fn(() => false), addImage: vi.fn(),
+    } as unknown as MapLibreMap;
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = [...TILE_LAYERS];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const errors = validateStyleMin({
+      version: 8,
+      glyphs: "https://example.test/fonts/{fontstack}/{range}.pbf",
+      sources: { "chart-0": { type: "vector", tiles: ["https://example.test/{z}/{x}/{y}.pbf"] } },
+      // `addLayer` widens each layer's `source` to accept an inline source specification.
+      layers: vi.mocked(map.addLayer).mock.calls.map(([layer]) => layer) as LayerSpecification[],
+    });
+    expect(errors.map((error) => `${error.line ?? ""} ${error.message}`)).toEqual([]);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   demoSoundings,
 } from "./demo-chart";
 import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
+import { landLabelFilter } from "./land";
 import { formatLightDetailsList } from "./light";
 import { addLightFlareImages, lightFlareIconExpression } from "./light-icon";
 
@@ -24,6 +25,8 @@ export const DEMO_SOURCE_IDS = {
 const protocol = new Protocol();
 let protocolRegistered = false;
 
+const LAND_LABEL_LAYER_PREFIX = "chart-land-label-";
+
 export function addPackageChartLayers(
   map: MapLibreMap,
   manifest: ChartPackageManifest,
@@ -34,6 +37,7 @@ export function addPackageChartLayers(
 } {
   registerPmtilesProtocol();
   const added = new Map<number, string[]>();
+  const usageBands = new Map(manifest.cells.map((cell) => [cell.name, cell.usageBand]));
   let visibleCellNames = new Set<string>();
 
   return {
@@ -41,12 +45,23 @@ export function addPackageChartLayers(
       const visibleCells = new Set(cellNames);
       visibleCellNames = visibleCells;
       const beforeId = positionLayerId(map);
+      // Coarser cells stay rendered beneath the selected band and name the same
+      // islands, so only the finest visible band may label a landform.
+      const finestBand = Math.max(...cellNames.map((cellName) => usageBands.get(cellName) ?? 0));
+      const applyVisibility = (layerIds: readonly string[], cellName: string): void => {
+        const cellVisible = visibleCells.has(cellName);
+        const labelsVisible = cellVisible && (usageBands.get(cellName) ?? 0) === finestBand;
+        layerIds.forEach((layerId) => map.setLayoutProperty(
+          layerId,
+          "visibility",
+          (layerId.startsWith(LAND_LABEL_LAYER_PREFIX) ? labelsVisible : cellVisible) ? "visible" : "none",
+        ));
+      };
       manifest.tileSets.forEach((tileSet, index) => {
         if (tileSet.format !== "pmtiles") return;
         const existingLayerIds = added.get(index);
         if (existingLayerIds) {
-          const visibility = visibleCells.has(tileSet.cellName) ? "visible" : "none";
-          existingLayerIds.forEach((layerId) => map.setLayoutProperty(layerId, "visibility", visibility));
+          applyVisibility(existingLayerIds, tileSet.cellName);
           return;
         }
         if (!visibleCells.has(tileSet.cellName)) return;
@@ -61,14 +76,16 @@ export function addPackageChartLayers(
           minzoom: tileSet.minZoom,
           maxzoom: tileSet.maxZoom,
         });
-        added.set(index, addVectorLayers(
+        const layerIds = addVectorLayers(
           map,
           sourceId,
           index,
           tileSet.layers,
           manifest.depth.displayUnit,
           beforeId,
-        ));
+        );
+        added.set(index, layerIds);
+        applyVisibility(layerIds, tileSet.cellName);
       });
 
       // `cellNames` is coarse-to-detailed. Reapply that order because cells are
@@ -171,6 +188,21 @@ function addVectorLayers(
       source: sourceId,
       "source-layer": "depth-contour",
       paint: { "line-color": "#367a90", "line-width": 1.5 },
+    }, beforeId);
+    layerIds.push(layerId);
+  }
+
+  if (layers.includes("land-area")) {
+    const layerId = `chart-land-area-${index}`;
+    map.addLayer({
+      id: layerId,
+      type: "fill",
+      source: sourceId,
+      "source-layer": "land-area",
+      paint: {
+        "fill-color": "#efe3bd",
+        "fill-opacity": 1,
+      },
     }, beforeId);
     layerIds.push(layerId);
   }
@@ -284,6 +316,32 @@ function addVectorLayers(
     }, beforeId);
     layerIds.push(labelLayerId);
     addLightInteraction(map, hitLayerId);
+  }
+  if (layers.includes("land-label")) {
+    const layerId = `${LAND_LABEL_LAYER_PREFIX}${index}`;
+    // Added last so soundings and lights, which matter more to a passage, take
+    // collision priority over landform names.
+    map.addLayer({
+      id: layerId,
+      type: "symbol",
+      source: sourceId,
+      "source-layer": "land-label",
+      filter: landLabelFilter(),
+      layout: {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 13,
+        "text-max-width": 8,
+        "text-allow-overlap": false,
+        "text-padding": 4,
+      },
+      paint: {
+        "text-color": "#4a4128",
+        "text-halo-color": "#efe3bd",
+        "text-halo-width": 1.5,
+      },
+    }, beforeId);
+    layerIds.push(layerId);
   }
   return layerIds;
 }

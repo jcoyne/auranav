@@ -1,4 +1,6 @@
-export const CHART_LAYERS = ["coastline", "depth-area", "depth-contour", "sounding", "light"] as const;
+export const CHART_LAYERS = [
+  "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
+] as const;
 export const TILE_LAYERS = ["coverage", ...CHART_LAYERS] as const;
 
 export type ChartLayer = (typeof CHART_LAYERS)[number];
@@ -106,13 +108,14 @@ function parseTileSet(value: unknown, index: number, cells: readonly ChartCell[]
   const minZoom = integer(tileSet.minZoom, `tileSets[${index}].minZoom`, 0, 24);
   const maxZoom = integer(tileSet.maxZoom, `tileSets[${index}].maxZoom`, 0, 24);
   if (minZoom > maxZoom) fail(`tileSets[${index}].minZoom must not exceed maxZoom`);
-  const layers = array(tileSet.layers, `tileSets[${index}].layers`).map((layer, layerIndex) => {
-    if (typeof layer !== "string" || !isTileLayer(layer)) {
-      fail(`tileSets[${index}].layers[${layerIndex}] is unsupported`);
-    }
+  const declaredLayers = array(tileSet.layers, `tileSets[${index}].layers`).map((layer, layerIndex) => {
+    if (typeof layer !== "string") fail(`tileSets[${index}].layers[${layerIndex}] must be a string`);
     return layer;
   });
-  if (layers.length === 0) fail(`tileSets[${index}].layers must not be empty`);
+  if (declaredLayers.length === 0) fail(`tileSets[${index}].layers must not be empty`);
+  // Schema version 1 may gain source layers compatibly. An older build must
+  // skip what it cannot draw rather than reject the whole package.
+  const layers = declaredLayers.filter(isTileLayer);
   const cellName = tileSet.cellName === undefined && cells.length === 1
     ? cells[0]?.name
     : nonEmptyString(tileSet.cellName, `tileSets[${index}].cellName`);

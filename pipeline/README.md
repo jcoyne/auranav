@@ -8,6 +8,8 @@ cells into PMTiles, and validates the manifest consumed by the web app.
 - Node.js 22.12 or newer
 - npm
 - GDAL/OGR with the S-57 and PMTiles vector drivers (`ogrinfo` and `ogr2ogr`)
+- SpatiaLite support in that GDAL build, which landform label anchors need. Conversion
+  fails by name if `ogrinfo -dialect SQLITE` cannot evaluate `ST_PointOnSurface`.
 
 Install dependencies and run all checks:
 

@@ -4,9 +4,18 @@ import { inspectEntries } from "./inventory.js";
 import { validateManifest } from "./manifest.js";
 import { type Command, type CommandRunner, runCommand } from "./process.js";
 
-const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS"] as const;
+const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN"] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
-const LAYER_NAMES = ["coverage", "coastline", "depth-area", "depth-contour", "sounding", "light"] as const;
+const LAYER_NAMES = [
+  "coverage", "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
+] as const;
+
+/**
+ * A landform label is anchored once per name, so a polygon split across tiles
+ * cannot repeat its label. Point landforms have no extent of their own, so they
+ * borrow this span and appear at the zoom band of a small island.
+ */
+const MINIMUM_LABEL_SPAN_DEGREES = 0.005;
 
 type RequiredLayer = (typeof REQUIRED_LAYERS)[number];
 type InspectedLayer = (typeof INSPECTED_LAYERS)[number];
@@ -66,22 +75,46 @@ interface MetadataResult {
 }
 
 interface ExtractSpec {
-  readonly source: InspectedLayer;
+  /** Source layers, narrowed to those a cell actually contains before extraction. */
+  readonly sources: readonly InspectedLayer[];
   readonly outputLayer: (typeof LAYER_NAMES)[number];
   readonly properties: readonly string[];
   readonly where?: string;
+  /** SpatiaLite geometry functions are unavailable in the default OGRSQL dialect. */
+  readonly dialect?: "OGRSQL" | "SQLITE";
+  /** Set where a cell can legitimately hold the source layer but no feature that survives the filter. */
+  readonly mayBeEmpty?: boolean;
+  readonly buildSql?: (sources: readonly InspectedLayer[], constants: readonly string[]) => string;
 }
+
+export const LAND_LABEL_EXTRACT: ExtractSpec = {
+  sources: ["LNDARE", "LNDRGN"],
+  outputLayer: "land-label",
+  properties: [],
+  dialect: "SQLITE",
+  buildSql: landLabelSql,
+  mayBeEmpty: true,
+};
 
 const EXTRACTS: readonly ExtractSpec[] = [
   // CATCOV=2 describes areas where coverage is explicitly unavailable. Those
   // polygons are not part of the cell's positive coverage mask.
-  { source: "M_COVR", outputLayer: "coverage", properties: [], where: "CATCOV = 1" },
-  { source: "COALNE", outputLayer: "coastline", properties: [] },
-  { source: "DEPARE", outputLayer: "depth-area", properties: ["DRVAL1 AS minimumDepth", "DRVAL2 AS maximumDepth"] },
-  { source: "DEPCNT", outputLayer: "depth-contour", properties: ["VALDCO AS depth"] },
-  { source: "SOUNDG", outputLayer: "sounding", properties: ["DEPTH AS depth"] },
+  { sources: ["M_COVR"], outputLayer: "coverage", properties: [], where: "CATCOV = 1" },
+  { sources: ["COALNE"], outputLayer: "coastline", properties: [] },
+  { sources: ["DEPARE"], outputLayer: "depth-area", properties: ["DRVAL1 AS minimumDepth", "DRVAL2 AS maximumDepth"] },
+  { sources: ["DEPCNT"], outputLayer: "depth-contour", properties: ["VALDCO AS depth"] },
+  { sources: ["SOUNDG"], outputLayer: "sounding", properties: ["DEPTH AS depth"] },
+  // LNDARE also carries point and line primitives, which a fill cannot draw.
   {
-    source: "LIGHTS",
+    sources: ["LNDARE"],
+    outputLayer: "land-area",
+    properties: ["OBJNAM AS name"],
+    where: "OGR_GEOMETRY = 'POLYGON'",
+    mayBeEmpty: true,
+  },
+  LAND_LABEL_EXTRACT,
+  {
+    sources: ["LIGHTS"],
     outputLayer: "light",
     properties: [
       "COLOUR AS color",
@@ -151,12 +184,12 @@ export function extractionCommand(
   create: boolean,
   ogr2ogr = "ogr2ogr",
 ): Command {
-  const properties = [
-    ...spec.properties,
+  const constants = [
     `'${cell.name}' AS cell`,
     `${cell.usageBand} AS usageBand`,
     `${cell.compilationScale} AS compilationScale`,
   ];
+  const sql = spec.buildSql === undefined ? projectionSql(spec, constants) : spec.buildSql(spec.sources, constants);
   return {
     executable: ogr2ogr,
     args: [
@@ -174,10 +207,50 @@ export function extractionCommand(
       "-oo",
       "ADD_SOUNDG_DEPTH=ON",
       "-dialect",
-      "OGRSQL",
+      spec.dialect ?? "OGRSQL",
       "-sql",
-      `SELECT ${properties.join(", ")} FROM ${spec.source}${spec.where === undefined ? "" : ` WHERE ${spec.where}`}`,
+      sql,
       path.resolve(output),
+      path.resolve(baseCell),
+    ],
+  };
+}
+
+function projectionSql(spec: ExtractSpec, constants: readonly string[]): string {
+  const source = spec.sources[0];
+  if (source === undefined || spec.sources.length !== 1) {
+    throw new Error(`Extract ${spec.outputLayer} needs exactly one source layer without a SQL builder`);
+  }
+  const columns = [...spec.properties, ...constants].join(", ");
+  return `SELECT ${columns} FROM ${source}${spec.where === undefined ? "" : ` WHERE ${spec.where}`}`;
+}
+
+/**
+ * Anchors one label per named landform at a point guaranteed to lie on the
+ * landform, so MapLibre never repeats or misplaces a label for a polygon that
+ * spans several tiles. `spanDegrees` lets the webapp pick a legible zoom band.
+ */
+function landLabelSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  if (sources.length === 0) throw new Error("Extract land-label needs at least one source layer");
+  const parts = sources
+    .map((source) => `SELECT OBJNAM AS name, geometry AS part FROM ${source} WHERE OBJNAM IS NOT NULL`)
+    .join(" UNION ALL ");
+  const columns = [
+    "name",
+    `MAX(ST_MaxX(shape) - ST_MinX(shape), ST_MaxY(shape) - ST_MinY(shape), ${MINIMUM_LABEL_SPAN_DEGREES}) AS spanDegrees`,
+    "ST_PointOnSurface(shape) AS geometry",
+    ...constants,
+  ].join(", ");
+  return `SELECT ${columns} FROM (SELECT name, ST_Union(part) AS shape FROM (${parts}) GROUP BY name)`;
+}
+
+/** Fails early and by name when GDAL lacks the SpatiaLite functions labels need. */
+export function spatialiteProbeCommand(baseCell: string, ogrinfo = "ogrinfo"): Command {
+  return {
+    executable: ogrinfo,
+    args: [
+      "-ro", "-q", "-dialect", "SQLITE", "-sql",
+      "SELECT ST_PointOnSurface(ST_GeomFromText('POLYGON((0 0,1 0,1 1,0 0))')) AS geometry",
       path.resolve(baseCell),
     ],
   };
@@ -198,6 +271,31 @@ export function tileCommand(
 
 export function packageSummaryCommand(pmtiles: string, ogrinfo = "ogrinfo"): Command {
   return { executable: ogrinfo, args: ["-ro", "-json", "-summary", path.resolve(pmtiles)] };
+}
+
+export function stagingSummaryCommand(stagingDatabase: string, ogrinfo = "ogrinfo"): Command {
+  return { executable: ogrinfo, args: ["-ro", "-json", "-summary", path.resolve(stagingDatabase)] };
+}
+
+/**
+ * A cell can hold a source layer whose features are all filtered out: land
+ * areas with no polygon, or land regions with no name. Advertising a layer the
+ * tiles do not contain would make the webapp add a layer that never draws, so
+ * such a layer is dropped. Any other empty extract is a conversion fault.
+ */
+export function parseProducedLayers(
+  summaryJson: string,
+  attempted: readonly { readonly name: (typeof LAYER_NAMES)[number]; readonly mayBeEmpty: boolean }[],
+): (typeof LAYER_NAMES)[number][] {
+  const document = parseOgrDocument(summaryJson, "staging summary");
+  const produced: (typeof LAYER_NAMES)[number][] = [];
+  for (const { name, mayBeEmpty } of attempted) {
+    const layer = document.layers?.find((candidate) => candidate.name === name);
+    const featureCount = Number.isInteger(layer?.featureCount) ? Number(layer?.featureCount) : 0;
+    if (featureCount >= 1) produced.push(name);
+    else if (!mayBeEmpty) throw new Error(`Extracted layer ${name} contains no features`);
+  }
+  return produced;
 }
 
 export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<InspectedLayer, string>): MetadataResult {
@@ -293,20 +391,30 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
 
   try {
     const stagingDatabase = path.join(temporary, "layers.gpkg");
-    const extracts = EXTRACTS.filter((extract) => extract.source === "M_COVR" || layers.includes(extract.source));
+    const extracts = EXTRACTS.flatMap((extract) => {
+      const present = extract.sources.filter((source) => source === "M_COVR" || layers.includes(source));
+      return present.length === 0 ? [] : [{ ...extract, sources: present }];
+    });
+    if (extracts.some((extract) => extract.dialect === "SQLITE")) await requireSpatialite(baseCell, options, runner);
     for (const [index, extract] of extracts.entries()) {
       await runner(extractionCommand(baseCell, stagingDatabase, extract, cell, index === 0, options.ogr2ogr));
     }
+    const stagingSummary = await runner(stagingSummaryCommand(stagingDatabase, options.ogrinfo));
+    const producedLayers = parseProducedLayers(
+      stagingSummary.stdout,
+      extracts.map((extract) => ({ name: extract.outputLayer, mayBeEmpty: extract.mayBeEmpty === true })),
+    );
+
     const tileFilename = `${options.packageId}.pmtiles`;
     const tilePath = path.join(temporary, tileFilename);
     await runner(tileCommand(tilePath, stagingDatabase, options.minZoom, options.maxZoom, options.ogr2ogr));
     await requireNonemptyFile(tilePath, "PMTiles output");
     const packageSummary = await runner(packageSummaryCommand(tilePath, options.ogrinfo));
-    validatePackageSummary(packageSummary.stdout, extracts.map((extract) => extract.outputLayer));
+    validatePackageSummary(packageSummary.stdout, producedLayers);
 
     const agreementFilename = "USER_AGREEMENT.txt";
     await copyFile(path.resolve(options.userAgreement), path.join(temporary, agreementFilename));
-    const manifest = createManifest(options, cell, bounds, tileFilename, agreementFilename, extracts.map((extract) => extract.outputLayer));
+    const manifest = createManifest(options, cell, bounds, tileFilename, agreementFilename, producedLayers);
     const temporaryManifest = path.join(temporary, "manifest.json");
     await writeFile(temporaryManifest, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     const validation = await validateManifest(temporaryManifest);
@@ -317,6 +425,21 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
   } catch (error: unknown) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
+  }
+}
+
+async function requireSpatialite(
+  baseCell: string,
+  options: ConvertCellOptions,
+  runner: CommandRunner,
+): Promise<void> {
+  try {
+    await runner(spatialiteProbeCommand(baseCell, options.ogrinfo));
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `GDAL cannot evaluate the SpatiaLite geometry functions that landform labels require: ${detail}`,
+    );
   }
 }
 

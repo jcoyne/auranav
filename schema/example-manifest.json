@@ -24,7 +24,7 @@
       "url": "./wisconsin-demo.pmtiles",
       "minZoom": 6,
       "maxZoom": 16,
-      "layers": ["coverage", "coastline", "depth-area", "depth-contour", "sounding", "light"]
+      "layers": ["coverage", "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label"]
     }
   ],
   "cells": [

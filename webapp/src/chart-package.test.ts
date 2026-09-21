@@ -55,13 +55,25 @@ describe("parseChartPackageManifest", () => {
       ...validManifest,
       tileSets: [{ ...validManifest.tileSets[0], minZoom: 17, maxZoom: 16 }],
     }],
-    ["unknown source layer", {
+    ["non-string source layer", {
       ...validManifest,
-      tileSets: [{ ...validManifest.tileSets[0], layers: ["wreck"] }],
+      tileSets: [{ ...validManifest.tileSets[0], layers: [7] }],
+    }],
+    ["empty source layers", {
+      ...validManifest,
+      tileSets: [{ ...validManifest.tileSets[0], layers: [] }],
     }],
     ["missing cells", { ...validManifest, cells: [] }],
   ])("rejects %s", (_label, candidate) => {
     expect(() => parseChartPackageManifest(candidate)).toThrow(ManifestError);
+  });
+
+  it("skips source layers it cannot draw instead of rejecting the package", () => {
+    const parsed = parseChartPackageManifest({
+      ...validManifest,
+      tileSets: [{ ...validManifest.tileSets[0], layers: ["coastline", "wreck", "land-label"] }],
+    });
+    expect(parsed.tileSets[0]?.layers).toEqual(["coastline", "land-label"]);
   });
 
   it("requires tile ownership for multi-cell packages", () => {

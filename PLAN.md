@@ -48,6 +48,7 @@ Acceptance: each project documents its local commands; the manifest example vali
 - [x] Download or accept one NOAA S-57 cell and its sequential updates.
 - [x] Verify update ordering and reject missing update sequences.
 - [x] Extract coastline (`COALNE`), soundings (`SOUNDG`), depth contours (`DEPCNT`), depth areas (`DEPARE`), and navigation lights (`LIGHTS`).
+- [x] Extract land areas (`LNDARE`) and one label anchor per named landform (`LNDARE`, `LNDRGN`).
 - [x] Produce a local vector-tile package and conforming manifest.
 
 Acceptance: a repeatable command transforms a pinned fixture or downloaded cell into a package that the webapp can open; provenance and update metadata survive the conversion.
@@ -61,6 +62,7 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 - [x] Select a usage band by display scale and retain coarser fallback coverage beneath it.
 - [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
 - [x] Render navigation lights with conventional characteristic, color, period, height, and range labels.
+- [x] Fill land areas (`LNDARE`) and label named landforms from `LNDARE` and `LNDRGN`.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
@@ -106,7 +108,8 @@ Acceptance: the documented test matrix passes on the agreed browsers/devices and
 - Correct application of sequential S-57 updates and preservation of metadata.
 - S-57 portrayal rules are more complex than feature-to-style mappings; the initial style must not imply ECDIS compliance.
 - Dense soundings require scale-dependent filtering for legibility and performance.
-- Overlapping cells and usage bands can create duplicate or misleading geometry.
+- Overlapping cells and usage bands can create duplicate or misleading geometry. Landform labels
+  are drawn from the finest visible band only, because coarser fallback cells name the same islands.
 - Browser storage quotas and iOS offline lifecycle behavior may constrain chart-package size.
 - Charted depth uses a stated sounding datum and is not current water depth.
 
