@@ -20,6 +20,8 @@ import {
   renderPositionStatus,
 } from "./ui/location-status";
 import { Drawer } from "./ui/drawer";
+import { renderDisplaySettings } from "./ui/display-settings";
+import { readMapSettings, writeMapSettings } from "./ui/map-settings";
 import {
   createScaleStatusView,
   renderChartError,
@@ -35,6 +37,7 @@ const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
 const scaleStatusElement = requiredElement("scale-status");
 const offlinePanelElement = requiredElement("offline-panel");
+const displaySettingsElement = requiredElement("display-settings");
 const drawer = new Drawer({
   panel: requiredElement("drawer"),
   toggle: requiredButton("drawer-toggle"),
@@ -56,6 +59,8 @@ let stalePositionTimer: number | undefined;
 
 const tracker = new PositionTracker(navigator.geolocation, (state) => handlePositionState(state));
 
+let mapSettings = readMapSettings();
+
 controls = new MapControls(controlsElement, {
   map,
   onFollowChange(following) {
@@ -65,6 +70,16 @@ controls = new MapControls(controlsElement, {
     } else {
       tracker.stop();
     }
+  },
+});
+
+controls.setPanZoomButtonsVisible(mapSettings.showPanZoomButtons);
+renderDisplaySettings(displaySettingsElement, {
+  showPanZoomButtons: mapSettings.showPanZoomButtons,
+  onShowPanZoomButtonsChange(visible) {
+    controls.setPanZoomButtonsVisible(visible);
+    mapSettings = { ...mapSettings, showPanZoomButtons: visible };
+    writeMapSettings(mapSettings);
   },
 });
 

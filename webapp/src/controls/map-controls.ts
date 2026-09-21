@@ -13,6 +13,8 @@ const PAN_DISTANCE = 120;
 
 export class MapControls {
   readonly #followButton: HTMLButtonElement;
+  readonly #panPad: HTMLElement;
+  readonly #zoomGroup: HTMLElement;
   #following = false;
 
   constructor(container: HTMLElement, options: ControlOptions) {
@@ -49,7 +51,18 @@ export class MapControls {
     this.#followButton.setAttribute("aria-pressed", "false");
     this.#followButton.classList.add("locate-button");
 
+    this.#panPad = panPad;
+    this.#zoomGroup = zoomGroup;
     container.append(panPad, zoomGroup, this.#followButton);
+  }
+
+  /**
+   * Hides the on-screen pan pad and zoom group. Gestures, arrow keys, and +/− keep working,
+   * and the locate button stays because no gesture replaces it.
+   */
+  setPanZoomButtonsVisible(visible: boolean): void {
+    this.#panPad.hidden = !visible;
+    this.#zoomGroup.hidden = !visible;
   }
 
   setFollowing(following: boolean): void {

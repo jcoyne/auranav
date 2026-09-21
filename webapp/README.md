@@ -55,10 +55,13 @@ Or run the corresponding workspace commands from the repository root.
 - `src/chart-package.ts` validates the schema-v1 fields consumed by the viewer.
 - `src/map/` creates the MapLibre map, PMTiles or preview chart layers, and GPS accuracy/position layers.
 - `src/gps/` owns the browser geolocation watch and translates browser errors into explicit application states.
-- `src/controls/` provides accessible directional pan, zoom, and location-follow buttons.
+- `src/controls/` provides accessible directional pan, zoom, and location-follow buttons, plus a
+  compass that points to north under rotation. The pan and zoom buttons are off by default, since
+  gestures cover both and the pad occupies scarce phone screen; the drawer's display section turns
+  them on and the choice persists in `localStorage`.
 - `src/ui/` renders chart provenance and visible location status, and owns the sliding drawer that
-  holds the chart provenance and offline sections so neither covers the map on a phone. A chart
-  package failure sets an alert badge on the drawer toggle and opens the drawer.
+  holds the chart provenance, offline, and display sections so none of them covers the map on a
+  phone. A chart package failure sets an alert badge on the drawer toggle and opens the drawer.
 
 ## Product constraints
 

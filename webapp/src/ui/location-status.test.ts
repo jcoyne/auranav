@@ -3,6 +3,7 @@ import {
   POSITION_STALE_AFTER_MS,
   isPositionStale,
   millisecondsUntilPositionStale,
+  renderLocationMessage,
   renderPositionStatus,
 } from "./location-status";
 
@@ -24,6 +25,20 @@ function position(timestamp: number, accuracy = 12.4): GeolocationPosition {
 }
 
 describe("location status", () => {
+  it("hides the banner when it has nothing to say", () => {
+    const container = document.createElement("section");
+
+    renderLocationMessage(container, "Requesting your location…");
+    expect(container.hidden).toBe(false);
+
+    renderLocationMessage(container, "");
+    expect(container.hidden).toBe(true);
+    expect(container.textContent).toBe("");
+
+    renderPositionStatus(container, position(Date.now()), "following");
+    expect(container.hidden).toBe(false);
+  });
+
   it("displays coordinates, reported accuracy, timestamp, and a current fix", () => {
     const container = document.createElement("section");
     const fix = position(Date.UTC(2026, 8, 18, 12, 0, 0));

@@ -8,6 +8,13 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The browser's own `[hidden] { display: none }` is a single attribute selector, so any author
+ * rule that sets `display` on a class ties or beats it and leaves the element on screen. Every
+ * element this app hides through the `hidden` property relies on this rule.
+ */
+[hidden] { display: none !important; }
+
 html,
 body,
 #map,
@@ -95,8 +102,6 @@ button { font: inherit; }
   font-size: 0.8rem;
   line-height: 1;
 }
-
-.drawer-alert[hidden] { display: none; }
 
 .map-shell { position: relative; min-height: 0; }
 
@@ -253,8 +258,6 @@ button { font: inherit; }
   background: rgb(3 24 33 / 42%);
 }
 
-.drawer-scrim[hidden] { display: none; }
-
 .drawer {
   position: absolute;
   z-index: 5;
@@ -375,6 +378,27 @@ button { font: inherit; }
 }
 .offline-actions button.secondary { color: #075c92; background: #fff; }
 .offline-actions button:disabled { opacity: 0.55; cursor: wait; }
+
+.settings-panel {
+  padding-top: 0.9rem;
+  border-top: 1px solid rgb(9 42 59 / 18%);
+}
+
+.settings-panel h2 { margin: 0 0 0.55rem; font-size: 0.95rem; }
+.settings-panel p { margin: 0.45rem 0 0; color: #526872; font-size: 0.72rem; line-height: 1.35; }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.4rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.settings-row input { width: 1.15rem; height: 1.15rem; accent-color: #087fcb; }
+.settings-row input:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
 
 @media (max-width: 680px) {
   .app-header { min-height: 4rem; gap: 0.6rem; }

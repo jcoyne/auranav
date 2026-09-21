@@ -57,6 +57,19 @@ describe("MapControls", () => {
     expect(map.panBy).toHaveBeenCalledWith([120, 0]);
   });
 
+  it("hides the pan pad and zoom group without hiding the locate button", () => {
+    const controls = new MapControls(container, { map, onFollowChange: vi.fn() });
+
+    controls.setPanZoomButtonsVisible(false);
+    expect(container.querySelector(".pan-pad")?.hasAttribute("hidden")).toBe(true);
+    expect(container.querySelector(".control-group")?.hasAttribute("hidden")).toBe(true);
+    expect(getButton("Center and follow your location").hidden).toBe(false);
+
+    controls.setPanZoomButtonsVisible(true);
+    expect(container.querySelector(".pan-pad")?.hasAttribute("hidden")).toBe(false);
+    expect(container.querySelector(".control-group")?.hasAttribute("hidden")).toBe(false);
+  });
+
   function getButton(name: string): HTMLButtonElement {
     const button = [...container.querySelectorAll("button")]
       .find((candidate) => candidate.getAttribute("aria-label") === name);
