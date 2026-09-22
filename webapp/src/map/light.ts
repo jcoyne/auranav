@@ -120,10 +120,6 @@ export function formatLightDetails(properties: LightProperties): string {
   return [label, ...details].join("\n");
 }
 
-export function formatLightDetailsList(lights: readonly LightProperties[]): string {
-  return [...new Set(lights.map(formatLightDetails))].join("\n\n");
-}
-
 function text(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();

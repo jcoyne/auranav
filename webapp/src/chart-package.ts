@@ -1,5 +1,6 @@
 export const CHART_LAYERS = [
   "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
+  "water-label", "buoy", "danger", "harbour-facility", "anchorage", "restricted-area", "restricted-area-edge", "cable",
 ] as const;
 export const TILE_LAYERS = ["coverage", ...CHART_LAYERS] as const;
 

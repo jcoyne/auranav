@@ -4,7 +4,7 @@ import {
   coverageCommand,
   datasetSummaryCommand,
   extractionCommand,
-  LAND_LABEL_EXTRACT,
+  EXTRACTS,
   metadataCommand,
   parseLayerSummaries,
   parseMetadata,
@@ -14,6 +14,7 @@ import {
 } from "../src/s57.js";
 
 const baseCell = path.resolve("fixtures/US4WI1DP.000");
+const bounds = [-87.9, 42.9, -87.6, 43.2] as const;
 const properties = {
   DSID_DSNM: "US4WI1DP.000",
   DSID_EDTN: "1",
@@ -65,8 +66,23 @@ function coverageSummary(): object {
   };
 }
 
-function landLabelSpec(sources: readonly ("LNDARE" | "LNDRGN")[]) {
-  return { ...LAND_LABEL_EXTRACT, sources };
+function extractSpec(
+  outputLayer: (typeof EXTRACTS)[number]["outputLayer"],
+  sources: (typeof EXTRACTS)[number]["sources"],
+) {
+  const spec = EXTRACTS.find((candidate) => candidate.outputLayer === outputLayer);
+  if (spec === undefined) throw new Error(`No extract produces ${outputLayer}`);
+  return { ...spec, sources };
+}
+
+function sqlOf(command: { readonly args: readonly string[] }): string {
+  return command.args[command.args.indexOf("-sql") + 1] ?? "";
+}
+
+/** Mirrors the pipeline's `(count:v1,v2)` normalisation so expectations stay readable. */
+function codeList(attribute: string): string {
+  const text = `CAST(${attribute} AS character(64))`;
+  return `replace(substr(${text}, instr(${text}, ':') + 1), ')', '')`;
 }
 
 function summary(name: string, featureCount: number, extent: number[]): object {
@@ -105,7 +121,7 @@ describe("S-57 commands", () => {
       sources: ["SOUNDG"],
       outputLayer: "sounding",
       properties: ["DEPTH AS depth"],
-    }, parsed, true);
+    }, parsed, bounds, true);
 
     expect(command.executable).toBe("ogr2ogr");
     expect(command.args).toContain("GPKG");
@@ -135,7 +151,7 @@ describe("S-57 commands", () => {
         "CATLIT AS category",
         "STATUS AS status",
       ],
-    }, parsed, true);
+    }, parsed, bounds, true);
 
     expect(command.args).toContain("light");
     expect(command.args).toContain(
@@ -150,7 +166,7 @@ describe("S-57 commands", () => {
       outputLayer: "coverage",
       properties: [],
       where: "CATCOV = 1",
-    }, parsed, true);
+    }, parsed, bounds, true);
 
     expect(command.args).toContain("coverage");
     expect(command.args).toContain("SELECT 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale FROM M_COVR WHERE CATCOV = 1");
@@ -163,7 +179,7 @@ describe("S-57 commands", () => {
       outputLayer: "land-area",
       properties: ["OBJNAM AS name"],
       where: "OGR_GEOMETRY = 'POLYGON'",
-    }, parsed, false);
+    }, parsed, bounds, false);
 
     expect(command.args).toContain("land-area");
     expect(command.args).toContain("OGRSQL");
@@ -174,26 +190,186 @@ describe("S-57 commands", () => {
 
   it("anchors one landform label per name across both land sources", () => {
     const parsed = parseMetadata(metadata(), summaries()).cell;
-    const command = extractionCommand(baseCell, "layers.gpkg", landLabelSpec(["LNDARE", "LNDRGN"]), parsed, false);
+    const command = extractionCommand(baseCell, "layers.gpkg", extractSpec("land-label", ["LNDARE", "LNDRGN", "BUAARE"]), parsed, bounds, false);
 
     expect(command.args).toContain("land-label");
     expect(command.args).toContain("SQLITE");
     expect(command.args).toContain(
+      "SELECT name, kind, MAX(ST_MaxX(shape) - ST_MinX(shape), ST_MaxY(shape) - ST_MinY(shape), 0.005) AS spanDegrees, "
+      + "ST_PointOnSurface(shape) AS geometry, 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale "
+      + "FROM (SELECT name, MIN(kind) AS kind, ST_Union(part) AS shape FROM ("
+      + "SELECT OBJNAM AS name, 'land' AS kind, geometry AS part FROM LNDARE WHERE OBJNAM IS NOT NULL UNION ALL "
+      + "SELECT OBJNAM AS name, 'land' AS kind, geometry AS part FROM LNDRGN WHERE OBJNAM IS NOT NULL UNION ALL "
+      + "SELECT OBJNAM AS name, 'settlement' AS kind, geometry AS part FROM BUAARE WHERE OBJNAM IS NOT NULL) "
+      + "GROUP BY name) WHERE NOT ("
+      + "(ST_MinX(shape) <= -87.9 + 0.000001 AND ST_MaxX(shape) >= -87.6 - 0.000001) OR "
+      + "(ST_MinY(shape) <= 42.9 + 0.000001 AND ST_MaxY(shape) >= 43.2 - 0.000001))",
+    );
+  });
+
+  it("anchors water labels from SEAARE without a kind", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const command = extractionCommand(baseCell, "layers.gpkg", extractSpec("water-label", ["SEAARE"]), parsed, bounds, false);
+
+    expect(command.args).toContain("water-label");
+    expect(sqlOf(command)).toBe(
       "SELECT name, MAX(ST_MaxX(shape) - ST_MinX(shape), ST_MaxY(shape) - ST_MinY(shape), 0.005) AS spanDegrees, "
       + "ST_PointOnSurface(shape) AS geometry, 'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale "
       + "FROM (SELECT name, ST_Union(part) AS shape FROM ("
-      + "SELECT OBJNAM AS name, geometry AS part FROM LNDARE WHERE OBJNAM IS NOT NULL UNION ALL "
-      + "SELECT OBJNAM AS name, geometry AS part FROM LNDRGN WHERE OBJNAM IS NOT NULL) GROUP BY name)",
+      + "SELECT OBJNAM AS name, geometry AS part FROM SEAARE WHERE OBJNAM IS NOT NULL) "
+      + "GROUP BY name) WHERE NOT ("
+      + "(ST_MinX(shape) <= -87.9 + 0.000001 AND ST_MaxX(shape) >= -87.6 - 0.000001) OR "
+      + "(ST_MinY(shape) <= 42.9 + 0.000001 AND ST_MaxY(shape) >= 43.2 - 0.000001))",
     );
+  });
+
+  it("drops a label anchor for a feature that reaches both opposite edges of its cell", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const clip = "WHERE NOT ("
+      + "(ST_MinX(shape) <= -87.9 + 0.000001 AND ST_MaxX(shape) >= -87.6 - 0.000001) OR "
+      + "(ST_MinY(shape) <= 42.9 + 0.000001 AND ST_MaxY(shape) >= 43.2 - 0.000001))";
+
+    for (const layer of ["land-label", "water-label"] as const) {
+      const sources = layer === "land-label" ? ["LNDARE"] as const : ["SEAARE"] as const;
+      const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec(layer, sources), parsed, bounds, false));
+      // A feature touching one edge pair only, such as a bay or an island, keeps its anchor.
+      expect(sql.endsWith(clip)).toBe(true);
+    }
   });
 
   it("labels from whichever land sources a cell actually contains", () => {
     const parsed = parseMetadata(metadata(), summaries()).cell;
-    const command = extractionCommand(baseCell, "layers.gpkg", landLabelSpec(["LNDRGN"]), parsed, false);
-    const sql = command.args[command.args.indexOf("-sql") + 1] ?? "";
+    const command = extractionCommand(baseCell, "layers.gpkg", extractSpec("land-label", ["LNDRGN"]), parsed, bounds, false);
+    const sql = sqlOf(command);
 
     expect(sql).toContain("FROM LNDRGN WHERE OBJNAM IS NOT NULL) GROUP BY name)");
     expect(sql).not.toContain("LNDARE");
+  });
+
+  it("normalises an S-57 code list to bare codes and passes a scalar through unchanged", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const command = extractionCommand(baseCell, "layers.gpkg", extractSpec("buoy", ["BOYLAT"]), parsed, bounds, false);
+
+    expect(command.args).toContain("buoy");
+    expect(command.args).toContain("SQLITE");
+    expect(sqlOf(command)).toBe(
+      "SELECT OBJNAM AS name, 'lateral' AS kind, "
+      + `${codeList("CATLAM")} AS category, `
+      + `${codeList("BOYSHP")} AS shape, `
+      + `${codeList("COLOUR")} AS color, `
+      + `${codeList("COLPAT")} AS colorPattern, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM BOYLAT",
+    );
+  });
+
+  it("gives every buoy class its own kind and only the classes that have a category one", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["BOYLAT", "BOYCAR", "BOYSPP", "BOYSAW", "BOYISD"] as const;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("buoy", sources), parsed, bounds, false));
+
+    expect(sql.split(" UNION ALL ")).toHaveLength(5);
+    for (const [source, kind, category] of [
+      ["BOYLAT", "lateral", `${codeList("CATLAM")} AS category`],
+      ["BOYCAR", "cardinal", `${codeList("CATCAM")} AS category`],
+      ["BOYSPP", "special-purpose", `${codeList("CATSPM")} AS category`],
+      ["BOYSAW", "safe-water", "NULL AS category"],
+      ["BOYISD", "isolated-danger", "NULL AS category"],
+    ]) {
+      const branch = sql.split(" UNION ALL ").find((candidate) => candidate.endsWith(`FROM ${source}`)) ?? "";
+      expect(branch).toContain(`'${kind}' AS kind`);
+      expect(branch).toContain(category);
+    }
+  });
+
+  it("reduces mixed-primitive dangers to one point each without merging distinct dangers", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["WRECKS", "OBSTRN", "UWTROC"] as const;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("danger", sources), parsed, bounds, false));
+
+    expect(sql.split(" UNION ALL ")).toHaveLength(3);
+    expect(sql).not.toContain("GROUP BY");
+    expect(sql.split(" UNION ALL ").at(-1)).toBe(
+      "SELECT OBJNAM AS name, 'rock' AS kind, NULL AS category, VALSOU AS depth, "
+      + `${codeList("WATLEV")} AS waterLevel, `
+      + `${codeList("QUASOU")} AS soundingQuality, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, "
+      + "ST_PointOnSurface(geometry) AS geometry FROM UWTROC",
+    );
+    expect(sql).toContain(`'wreck' AS kind, ${codeList("CATWRK")} AS category`);
+    expect(sql).toContain(`'obstruction' AS kind, ${codeList("CATOBS")} AS category`);
+  });
+
+  it("places a harbour facility on the feature and keeps anchorages as polygons", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const facility = extractionCommand(baseCell, "layers.gpkg", extractSpec("harbour-facility", ["HRBFAC"]), parsed, bounds, false);
+    const anchorage = extractionCommand(baseCell, "layers.gpkg", extractSpec("anchorage", ["ACHARE"]), parsed, bounds, false);
+
+    expect(sqlOf(facility)).toBe(
+      `SELECT OBJNAM AS name, ${codeList("CATHAF")} AS category, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, "
+      + "ST_PointOnSurface(geometry) AS geometry FROM HRBFAC",
+    );
+    expect(sqlOf(anchorage)).toBe(
+      `SELECT OBJNAM AS name, ${codeList("CATACH")} AS category, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM ACHARE",
+    );
+  });
+
+  it("derives anchoring from whole RESTRN codes so 1 cannot match inside 10 or 16", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["CBLARE", "RESARE", "PIPARE"] as const;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("restricted-area", sources), parsed, bounds, false));
+    const guarded = `',' || ${codeList("RESTRN")} || ','`;
+    const anchoring = `CASE WHEN instr(${guarded}, ',1,') > 0 THEN 'prohibited'`
+      + ` WHEN instr(${guarded}, ',2,') > 0 THEN 'restricted' END AS anchoring`;
+
+    expect(sql.split(" UNION ALL ")).toHaveLength(3);
+    expect(sql.split(" UNION ALL ")[0]).toBe(
+      "SELECT OBJNAM AS name, 'cable-area' AS kind, "
+      + `${codeList("RESTRN")} AS restriction, NULL AS category, ${anchoring}, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM CBLARE",
+    );
+    // S-57 gives CATREA to RESARE alone, so the other two classes project NULL.
+    expect(sql).toContain(`'restricted' AS kind, ${codeList("RESTRN")} AS restriction, ${codeList("CATREA")} AS category`);
+    expect(sql).toContain(`'pipeline-area' AS kind, ${codeList("RESTRN")} AS restriction, NULL AS category`);
+    expect(sql.match(/AS anchoring/g)).toHaveLength(3);
+  });
+
+  it("subtracts the cell boundary from a restricted area's outline", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["CBLARE", "RESARE", "PIPARE"] as const;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("restricted-area-edge", sources), parsed, bounds, false));
+
+    // The cut edge a cell introduces is not a feature of the chart, so the
+    // outline is the polygon boundary minus the cell's own coverage boundary.
+    expect(sql).toContain("ST_Difference(ST_Boundary(area.geometry), ST_Buffer(ST_Boundary(cover.extent), 0.000001)) AS geometry");
+    // One coverage polygon per cell, so the join cannot multiply the outlines.
+    expect(sql).toContain("(SELECT ST_Union(geometry) AS extent FROM M_COVR WHERE CATCOV = 1) cover");
+    expect(sql).toContain("WHERE geometry IS NOT NULL");
+    expect(sql.split(" UNION ALL ")).toHaveLength(3);
+    // The outline needs only what styles it; restriction and category stay on the polygon.
+    expect(sql).not.toContain("AS restriction");
+    expect(sql.match(/AS anchoring/g)).toHaveLength(3);
+  });
+
+  it("splits submarine cables from pipelines under one line layer", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("cable", ["CBLSUB", "PIPSOL"]), parsed, bounds, false));
+
+    expect(sql).toBe(
+      `SELECT OBJNAM AS name, 'cable' AS kind, ${codeList("CATCBL")} AS category, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM CBLSUB UNION ALL "
+      + `SELECT OBJNAM AS name, 'pipeline' AS kind, ${codeList("CATPIP")} AS category, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM PIPSOL",
+    );
+  });
+
+  it("marks every layer beyond the base chart as optional, since no cell holds them all", () => {
+    const optional = EXTRACTS.filter((extract) => extract.mayBeEmpty === true).map((extract) => extract.outputLayer);
+    expect(optional).toEqual([
+      "land-area", "land-label", "water-label", "buoy", "danger", "harbour-facility", "anchorage",
+      "restricted-area", "restricted-area-edge", "cable",
+    ]);
   });
 
   it("drops optional layers a cell filtered empty and rejects any other empty extract", () => {
@@ -260,6 +436,17 @@ describe("parseMetadata", () => {
     expect(() => parseMetadata(metadata(), summaries({ LIGHTS: summary("LIGHTS", 0, [-87, 43, -86, 44]) }))).toThrow(
       "Required S-57 layer LIGHTS contains no features",
     );
+  });
+
+  it("detects the aid, hazard and area classes the new layers draw on", () => {
+    const extended = summaries();
+    for (const name of ["SEAARE", "BUAARE", "BOYLAT", "WRECKS", "OBSTRN", "UWTROC", "HRBFAC", "CBLARE", "RESARE", "CBLSUB"]) {
+      extended.set(name as never, JSON.stringify(summary(name, 2, [-87.8, 43, -87.7, 43.1])));
+    }
+    expect(parseMetadata(metadata(), extended).layers).toEqual([
+      "COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN", "BUAARE", "SEAARE",
+      "BOYLAT", "WRECKS", "OBSTRN", "UWTROC", "HRBFAC", "CBLARE", "RESARE", "CBLSUB",
+    ]);
   });
 
   it("rejects absent metadata and non-metre depths", () => {

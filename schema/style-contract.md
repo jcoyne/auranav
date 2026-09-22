@@ -39,13 +39,134 @@ Polygon features derived from S-57 `LNDARE` objects. `LNDARE` point and line pri
 - `name`: `OBJNAM` when the landform is named, otherwise absent
 - `cell`, `usageBand`, `compilationScale`
 
-## `land-label`
+## `light`
 
-Point features, one per distinct landform name in a cell, derived from the named `LNDARE` and `LNDRGN` objects. Each anchor lies on its landform, so a landform spanning several tiles is labelled once rather than once per tile. Two distinct landforms sharing a name within one cell share a single anchor.
+Point features derived from S-57 `LIGHTS` objects.
+
+- `color`, `status`: **not** normalised. This layer predates the code-list rule below and still emits
+  GDAL's JSON array text, such as `[ "1" ]`. Normalising it is a compatible follow-up.
+- `characteristic`, `signalGroup`, `periodSeconds`, `heightMetres`, `nominalRangeNm`, `sectorStart`,
+  `sectorEnd`, `orientation`, `heightDatum`, `category`
+- `cell`, `usageBand`, `compilationScale`
+
+## Attribute code lists
+
+Several S-57 attributes are lists. GDAL renders them as `(count:value,value)`. The pipeline reduces
+each to a comma-separated list of S-57 codes, so a tile property is always a plain string: `"3"`,
+`"3,1"`, or absent. A single-valued attribute passes through unchanged. `light` is the one exception,
+noted above.
+
+Where several layers share the property name `category`, the S-57 attribute behind it differs by
+`kind`: `buoy` uses `CATLAM`, `CATCAM` or `CATSPM`; `danger` uses `CATWRK` or `CATOBS`; `cable` uses
+`CATCBL` or `CATPIP`. A reader must branch on `kind` before interpreting a code.
+
+## Label anchors
+
+`land-label` and `water-label` hold one point per distinct name in a cell, placed on the feature by
+`ST_PointOnSurface`, so a feature spanning several tiles is labelled once rather than once per tile.
+
+A feature whose bounding box reaches both opposite edges of its cell continues clear across it, so
+no point inside the cell is a meaningful centre for it. Those anchors are dropped. A coarser cell
+that contains the feature outright still labels it. This is what keeps `Lake Superior` from claiming
+a label in every cell it passes through.
+
+The rule only catches a feature that spans a cell edge to edge. A mainland entering a cell as a
+corner sliver still touches two edges that are not an opposite pair, so it keeps its anchor and is
+labelled — `Wisconsin` in US4WI1QF is the worked example. That is deliberate: a corner sliver is
+visible and placeable. Dropping it would need a second, area-based criterion.
 
 - `name`: `OBJNAM`, always present
-- `spanDegrees`: the larger of the landform's bounding-box width and height in degrees, floored at 0.005
+- `spanDegrees`: the larger of the anchor's bounding-box width and height in degrees, floored at 0.005
+- `kind`: `land-label` distinguishes `land` from `settlement`; `water-label` has no kind
 - `cell`, `usageBand`, `compilationScale`
+
+`land-label` draws on `LNDARE`, `LNDRGN` and `BUAARE`; `water-label` draws on `SEAARE`.
+
+## `buoy`
+
+Point features from `BOYLAT`, `BOYCAR`, `BOYSAW`, `BOYISD` and `BOYSPP`.
+
+- `name`: `OBJNAM` when named
+- `kind`: `lateral`, `cardinal`, `safe-water`, `isolated-danger` or `special-purpose`
+- `category`: code list from `CATLAM`, `CATCAM` or `CATSPM`; absent for safe-water and isolated-danger
+- `shape`: `BOYSHP` code
+- `color`, `colorPattern`: code lists from `COLOUR` and `COLPAT`
+- `cell`, `usageBand`, `compilationScale`
+
+## `danger`
+
+Point features from `WRECKS`, `OBSTRN` and `UWTROC`. Area and line primitives contribute a single
+point placed on the feature, so every danger carries one symbol.
+
+- `name`: `OBJNAM` when named
+- `kind`: `wreck`, `obstruction` or `rock`
+- `category`: code list from `CATWRK` or `CATOBS`; absent for rocks
+- `depth`: `VALSOU` in metres when sounded
+- `waterLevel`: `WATLEV` code
+- `soundingQuality`: code list from `QUASOU`
+- `cell`, `usageBand`, `compilationScale`
+
+## `harbour-facility`
+
+Point features from `HRBFAC`. Area primitives contribute a point placed on the feature.
+
+- `name`: `OBJNAM` when named
+- `category`: code list from `CATHAF`
+- `cell`, `usageBand`, `compilationScale`
+
+## `anchorage`
+
+Polygon features from `ACHARE`.
+
+- `name`: `OBJNAM` when named
+- `category`: code list from `CATACH`
+- `cell`, `usageBand`, `compilationScale`
+
+## `restricted-area`
+
+Polygon features from `CBLARE`, `RESARE` and `PIPARE`, where a restriction applies to the water.
+
+- `name`: `OBJNAM` when named
+- `kind`: `cable-area`, `restricted` or `pipeline-area`
+- `restriction`: code list from `RESTRN`
+- `category`: code list from `CATREA`, which S-57 gives to `RESARE` alone. Always absent on a
+  `cable-area` or `pipeline-area`.
+- `anchoring`: `prohibited` when `RESTRN` contains 1, `restricted` when it contains 2, otherwise absent.
+  Derived in the pipeline so the webapp styles an anchoring restriction from one field rather than
+  parsing a code list in a style expression. It can under-report: a cell expressing an anchoring rule
+  through one of the codes GDAL does not define (16, 17, 22, 24) yields no `anchoring` value, and the
+  area falls back to neutral styling with its raw codes shown. Absent means "not derived", not "safe
+  to anchor".
+- `cell`, `usageBand`, `compilationScale`
+
+## `restricted-area-edge`
+
+Line features: the outline of each `restricted-area`, with the segments that lie along the cell's own
+coverage boundary removed. A restricted area is clipped to its cell, so each cell carries a cut edge
+that is not a feature of the chart; two cells meeting across one area would otherwise draw a seam
+through it. Each cell's outline stops at the boundary where the neighbouring cell's resumes, so the
+area reads as the single polygon it is. An area that never reaches the cell edge passes through whole.
+
+A display must draw restricted-area outlines from this layer, not from the `restricted-area` polygon.
+
+- `name`, `kind`, `anchoring`: as on `restricted-area`
+- `cell`, `usageBand`, `compilationScale`
+
+## `cable`
+
+Line features from `CBLSUB` and submarine `PIPSOL` runs.
+
+- `name`: `OBJNAM` when named
+- `kind`: `cable` or `pipeline`
+- `category`: code list from `CATCBL` or `CATPIP`
+- `cell`, `usageBand`, `compilationScale`
+
+## S-57 code meanings
+
+GDAL ships the S-57 attribute value tables as `s57attributes.csv` and `s57expectedinput.csv`.
+They are authoritative where they have an entry but incomplete: `RESTRN` stops at 15, and NOAA
+uses 16, 17, 22 and 24. A display must show the code itself when no meaning is known rather than
+guess at one. Restriction wording is not a place to infer.
 
 ## Display rules
 
@@ -57,5 +178,13 @@ Point features, one per distinct landform name in a cell, derived from the named
   curves are whole units: NOAA stores the 6 ft curve as 1.8 m, so a converted value is rounded
   to recover what the chart calls it. The zero curve is the low-water line and is not labelled.
 - Landform labels should appear only in the zoom band where the landform is legible at screen size, using `spanDegrees`, so mainland labels do not persist at every scale.
-- Sounding and light labels take collision priority over landform labels.
+- Sounding and light labels take collision priority over landform and water labels.
+- Buoys and dangers are aids and hazards, not decoration: they take collision priority over every label.
+- An anchoring restriction must be visible without opening a popup. It is carried by the area's
+  outline and label, not by a fill wash: these areas are large enough to tint the chart beneath
+  them, and a national lakeshore covers most of its cell.
+- A restricted area is drawn above every cell, not within its own cell's stack. It belongs to
+  whichever cell charted it, which is often coarser than the harbour cell in view, and a finer
+  cell's opaque coverage would otherwise hide it while it still answered clicks.
+- Depths stay in metres in the tiles. `danger.depth` converts for display like a sounding.
 - Schema version 1 styling is intentionally simplified and must not be represented as IHO S-52/ECDIS portrayal.

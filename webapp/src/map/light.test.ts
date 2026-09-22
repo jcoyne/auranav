@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatLightDetails, formatLightDetailsList, formatLightLabel } from "./light";
+import { formatFeatureDetailsList } from "./chart-features";
+import { formatLightDetails, formatLightLabel } from "./light";
 
 describe("navigation light formatting", () => {
   it("uses conventional chart abbreviations in display order", () => {
@@ -64,10 +65,10 @@ describe("navigation light formatting", () => {
   });
 
   it("separates coincident sector-light records in popup text", () => {
-    expect(formatLightDetailsList([
+    expect(formatFeatureDetailsList([
       { characteristic: 2, color: "[ \"3\" ]", sectorStart: 45, sectorEnd: 135 },
       { characteristic: 2, color: "[ \"4\" ]", sectorStart: 135, sectorEnd: 225 },
-    ])).toBe([
+    ], formatLightDetails)).toBe([
       "Fl R\nCharacteristic: Flashing\nColor: Red\nSector: 045°–135°",
       "Fl G\nCharacteristic: Flashing\nColor: Green\nSector: 135°–225°",
     ].join("\n\n"));

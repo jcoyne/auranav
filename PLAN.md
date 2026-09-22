@@ -63,10 +63,22 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 - [x] Use precise positive `M_COVR` geometry to mask cells from coarse to detailed.
 - [x] Render navigation lights with conventional characteristic, color, period, height, and range labels.
 - [x] Fill land areas (`LNDARE`) and label named landforms from `LNDARE` and `LNDRGN`.
-- [x] Label depth contours along the line in the package display unit.
+- [x] Label depth contours along the line in the package display unit, rounding a converted foot or
+      fathom curve to the whole unit the chart names it by, and leaving the zero curve unlabelled.
+- [x] Label settlements (`BUAARE`) and named waters (`SEAARE`), dropping label anchors for features
+      that cross their cell edge to edge.
+- [x] Show buoys, dangers (wrecks, obstructions, rocks), harbour facilities, and anchorages.
+- [x] Show submarine cables and restricted areas, making an anchoring restriction visible without a popup.
+- [x] Draw a restricted area's outline from `restricted-area-edge`, whose cell-boundary cut edges the
+      pipeline removes, so an area two cells share reads as one polygon.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
+
+Status: every item above is implemented, and each layer is verified to reach the tiles against real
+Wisconsin cells. Symbology is covered by unit tests and by validating each generated layer against
+the MapLibre style specification; it is not visually confirmed, and colour, symbol and label-density
+choices should be expected to need a pass. The M6 test matrix is where portrayal gets signed off.
 
 ### M3: GPS
 
@@ -97,6 +109,8 @@ Acceptance: the full package passes schema and integrity checks, update dates ar
 
 ### M6: Field readiness
 
+- [ ] Review portrayal on a real display: symbol legibility, chart colours, and label density where
+      contours, soundings, lights, buoys, dangers, landforms, settlements and waters compete.
 - [ ] Test keyboard and touch accessibility, daylight contrast, and reduced-motion behavior.
 - [ ] Measure startup, pan/zoom, tile size, battery use, and storage consumption on representative mobile hardware.
 - [ ] Add prominent informational-use wording and NOAA attribution/user-agreement access.
@@ -113,6 +127,18 @@ Acceptance: the documented test matrix passes on the agreed browsers/devices and
   are drawn from the finest visible band only, because coarser fallback cells name the same islands.
 - Browser storage quotas and iOS offline lifecycle behavior may constrain chart-package size.
 - Charted depth uses a stated sounding datum and is not current water depth.
+- A feature spanning several cells is labelled once per cell, because a label anchor is computed
+  within one cell. Trimming the cut edges makes such an area *look* like one polygon, so its repeated
+  label is now the visible seam. Merging would need a package-level layer, which the per-cell tile
+  set does not currently allow.
+- The `light` layer predates the attribute code-list rule and still emits GDAL JSON array text.
+  Normalising it means moving that extract to the SQLite dialect; the contract records the exception.
+- S-57 attribute value tables shipped with GDAL are incomplete: `RESTRN` stops at code 15 while NOAA
+  uses 16, 17, 22 and 24. A restriction whose meaning is unknown must display its code, never a guess.
+- Adjacent cells compiled at different scales do not edge-match. Between US5WI21A (1:12,000, 2024) and
+  US4WI1PF (1:45,000, 2026) the shared depth contours differ by 73-158 m at the median. This is in the
+  NOAA source, not the pipeline, which reproduces contours to within 0.1 m. The transition is currently
+  silent; drawing the selected cell's coverage boundary would make it legible.
 
 ## Definition of done
 

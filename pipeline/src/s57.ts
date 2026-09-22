@@ -4,10 +4,16 @@ import { inspectEntries } from "./inventory.js";
 import { validateManifest } from "./manifest.js";
 import { type Command, type CommandRunner, runCommand } from "./process.js";
 
-const REQUIRED_LAYERS = ["COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN"] as const;
+const REQUIRED_LAYERS = [
+  "COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN", "BUAARE", "SEAARE",
+  "BOYLAT", "BOYCAR", "BOYSPP", "BOYSAW", "BOYISD", "WRECKS", "OBSTRN", "UWTROC", "HRBFAC",
+  "ACHARE", "CBLARE", "RESARE", "PIPARE", "CBLSUB", "PIPSOL",
+] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
 const LAYER_NAMES = [
   "coverage", "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
+  "water-label", "buoy", "danger", "harbour-facility", "anchorage", "restricted-area",
+  "restricted-area-edge", "cable",
 ] as const;
 
 /**
@@ -16,6 +22,13 @@ const LAYER_NAMES = [
  * borrow this span and appear at the zoom band of a small island.
  */
 const MINIMUM_LABEL_SPAN_DEGREES = 0.005;
+
+/**
+ * Coverage edges are stored to more decimal places than a feature boundary
+ * shares exactly, so "touches the edge" is judged with a tolerance rather than
+ * by equality. A millionth of a degree is about 10 cm.
+ */
+const EDGE_TOLERANCE_DEGREES = 0.000001;
 
 type RequiredLayer = (typeof REQUIRED_LAYERS)[number];
 type InspectedLayer = (typeof INSPECTED_LAYERS)[number];
@@ -84,19 +97,49 @@ interface ExtractSpec {
   readonly dialect?: "OGRSQL" | "SQLITE";
   /** Set where a cell can legitimately hold the source layer but no feature that survives the filter. */
   readonly mayBeEmpty?: boolean;
-  readonly buildSql?: (sources: readonly InspectedLayer[], constants: readonly string[]) => string;
+  readonly buildSql?: (
+    sources: readonly InspectedLayer[],
+    constants: readonly string[],
+    bounds: Bounds,
+  ) => string;
 }
 
-export const LAND_LABEL_EXTRACT: ExtractSpec = {
-  sources: ["LNDARE", "LNDRGN"],
-  outputLayer: "land-label",
-  properties: [],
-  dialect: "SQLITE",
-  buildSql: landLabelSql,
-  mayBeEmpty: true,
+/** How one source class of a multi-class output layer names and categorises itself. */
+interface SourceVariant {
+  readonly kind: string;
+  /** The S-57 attribute holding the category code list, where the class defines one. */
+  readonly category?: string;
+}
+
+const LABEL_KINDS: Readonly<Record<string, string>> = { LNDARE: "land", LNDRGN: "land", BUAARE: "settlement" };
+
+const BUOY_VARIANTS: Readonly<Record<string, SourceVariant>> = {
+  BOYLAT: { kind: "lateral", category: "CATLAM" },
+  BOYCAR: { kind: "cardinal", category: "CATCAM" },
+  BOYSPP: { kind: "special-purpose", category: "CATSPM" },
+  BOYSAW: { kind: "safe-water" },
+  BOYISD: { kind: "isolated-danger" },
 };
 
-const EXTRACTS: readonly ExtractSpec[] = [
+const DANGER_VARIANTS: Readonly<Record<string, SourceVariant>> = {
+  WRECKS: { kind: "wreck", category: "CATWRK" },
+  OBSTRN: { kind: "obstruction", category: "CATOBS" },
+  UWTROC: { kind: "rock" },
+};
+
+// S-57 gives CATREA to RESARE alone; CBLARE and PIPARE have no category attribute.
+const RESTRICTED_AREA_VARIANTS: Readonly<Record<string, SourceVariant>> = {
+  CBLARE: { kind: "cable-area" },
+  RESARE: { kind: "restricted", category: "CATREA" },
+  PIPARE: { kind: "pipeline-area" },
+};
+
+const CABLE_VARIANTS: Readonly<Record<string, SourceVariant>> = {
+  CBLSUB: { kind: "cable", category: "CATCBL" },
+  PIPSOL: { kind: "pipeline", category: "CATPIP" },
+};
+
+export const EXTRACTS: readonly ExtractSpec[] = [
   // CATCOV=2 describes areas where coverage is explicitly unavailable. Those
   // polygons are not part of the cell's positive coverage mask.
   { sources: ["M_COVR"], outputLayer: "coverage", properties: [], where: "CATCOV = 1" },
@@ -112,7 +155,22 @@ const EXTRACTS: readonly ExtractSpec[] = [
     where: "OGR_GEOMETRY = 'POLYGON'",
     mayBeEmpty: true,
   },
-  LAND_LABEL_EXTRACT,
+  {
+    sources: ["LNDARE", "LNDRGN", "BUAARE"],
+    outputLayer: "land-label",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: landLabelSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["SEAARE"],
+    outputLayer: "water-label",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: waterLabelSql,
+    mayBeEmpty: true,
+  },
   {
     sources: ["LIGHTS"],
     outputLayer: "light",
@@ -130,6 +188,62 @@ const EXTRACTS: readonly ExtractSpec[] = [
       "CATLIT AS category",
       "STATUS AS status",
     ],
+  },
+  {
+    sources: ["BOYLAT", "BOYCAR", "BOYSPP", "BOYSAW", "BOYISD"],
+    outputLayer: "buoy",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: buoySql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["WRECKS", "OBSTRN", "UWTROC"],
+    outputLayer: "danger",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: dangerSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["HRBFAC"],
+    outputLayer: "harbour-facility",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: harbourFacilitySql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["ACHARE"],
+    outputLayer: "anchorage",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: anchorageSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["CBLARE", "RESARE", "PIPARE"],
+    outputLayer: "restricted-area",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: restrictedAreaSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["CBLARE", "RESARE", "PIPARE"],
+    outputLayer: "restricted-area-edge",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: restrictedAreaEdgeSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["CBLSUB", "PIPSOL"],
+    outputLayer: "cable",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: cableSql,
+    mayBeEmpty: true,
   },
 ];
 
@@ -181,6 +295,7 @@ export function extractionCommand(
   output: string,
   spec: ExtractSpec,
   cell: CellMetadata,
+  bounds: Bounds,
   create: boolean,
   ogr2ogr = "ogr2ogr",
 ): Command {
@@ -189,7 +304,9 @@ export function extractionCommand(
     `${cell.usageBand} AS usageBand`,
     `${cell.compilationScale} AS compilationScale`,
   ];
-  const sql = spec.buildSql === undefined ? projectionSql(spec, constants) : spec.buildSql(spec.sources, constants);
+  const sql = spec.buildSql === undefined
+    ? projectionSql(spec, constants)
+    : spec.buildSql(spec.sources, constants, bounds);
   return {
     executable: ogr2ogr,
     args: [
@@ -226,22 +343,235 @@ function projectionSql(spec: ExtractSpec, constants: readonly string[]): string 
 }
 
 /**
- * Anchors one label per named landform at a point guaranteed to lie on the
- * landform, so MapLibre never repeats or misplaces a label for a polygon that
- * spans several tiles. `spanDegrees` lets the webapp pick a legible zoom band.
+ * GDAL renders an S-57 attribute list as the text `(count:v1,v2)`. Reducing it
+ * to `v1,v2` gives the webapp one plain string to match on whatever the
+ * attribute's cardinality: a scalar has no `(count:` prefix, so `instr` returns
+ * 0 and the value passes through unchanged, and an absent attribute stays NULL.
  */
-function landLabelSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
-  if (sources.length === 0) throw new Error("Extract land-label needs at least one source layer");
-  const parts = sources
-    .map((source) => `SELECT OBJNAM AS name, geometry AS part FROM ${source} WHERE OBJNAM IS NOT NULL`)
+function codeListExpression(attribute: string): string {
+  const text = `CAST(${attribute} AS character(64))`;
+  return `replace(substr(${text}, instr(${text}, ':') + 1), ')', '')`;
+}
+
+function codeList(attribute: string, alias: string): string {
+  return `${codeListExpression(attribute)} AS ${alias}`;
+}
+
+/**
+ * Builds one branch per source class. OGRSQL cannot express UNION ALL, so every
+ * layer drawn from more than one S-57 class runs in the SQLite dialect, and
+ * each branch must project the same column names in the same order.
+ */
+function unionSql(
+  outputLayer: string,
+  sources: readonly InspectedLayer[],
+  columns: (source: InspectedLayer) => readonly string[],
+  where?: string,
+): string {
+  if (sources.length === 0) throw new Error(`Extract ${outputLayer} needs at least one source layer`);
+  return sources
+    .map((source) => `SELECT ${columns(source).join(", ")} FROM ${source}${where === undefined ? "" : ` WHERE ${where}`}`)
     .join(" UNION ALL ");
+}
+
+function variantFor(
+  variants: Readonly<Record<string, SourceVariant>>,
+  source: InspectedLayer,
+  outputLayer: string,
+): SourceVariant {
+  const variant = variants[source];
+  if (variant === undefined) throw new Error(`Extract ${outputLayer} has no variant for source layer ${source}`);
+  return variant;
+}
+
+/** A class without a category attribute still has to project the column the union expects. */
+function categoryColumn(variant: SourceVariant): string {
+  return variant.category === undefined ? "NULL AS category" : codeList(variant.category, "category");
+}
+
+/**
+ * A feature whose bounding box reaches both opposite edges of the cell runs
+ * past it, so no point inside the cell is a meaningful centre for it and its
+ * anchor is dropped. A coarser cell that contains the feature outright still
+ * labels it.
+ */
+function unclippedCondition(bounds: Bounds): string {
+  const [west, south, east, north] = bounds;
+  const spansWidth = `ST_MinX(shape) <= ${west} + ${EDGE_TOLERANCE_DEGREES}`
+    + ` AND ST_MaxX(shape) >= ${east} - ${EDGE_TOLERANCE_DEGREES}`;
+  const spansHeight = `ST_MinY(shape) <= ${south} + ${EDGE_TOLERANCE_DEGREES}`
+    + ` AND ST_MaxY(shape) >= ${north} - ${EDGE_TOLERANCE_DEGREES}`;
+  return `NOT ((${spansWidth}) OR (${spansHeight}))`;
+}
+
+/**
+ * Anchors one label per named feature at a point guaranteed to lie on it, so
+ * MapLibre never repeats or misplaces a label for a polygon that spans several
+ * tiles. `spanDegrees` lets the webapp pick a legible zoom band. Where a name
+ * is carried by more than one kind of source, `MIN` settles it, so a name that
+ * is both a landform and a built-up area is labelled as a landform.
+ */
+function labelAnchorSql(
+  outputLayer: string,
+  sources: readonly InspectedLayer[],
+  constants: readonly string[],
+  bounds: Bounds,
+  kinds?: Readonly<Record<string, string>>,
+): string {
+  const parts = unionSql(
+    outputLayer,
+    sources,
+    (source) => [
+      "OBJNAM AS name",
+      ...(kinds === undefined ? [] : [`'${kindFor(kinds, source, outputLayer)}' AS kind`]),
+      "geometry AS part",
+    ],
+    "OBJNAM IS NOT NULL",
+  );
+  const grouped = [
+    "name",
+    ...(kinds === undefined ? [] : ["MIN(kind) AS kind"]),
+    "ST_Union(part) AS shape",
+  ].join(", ");
   const columns = [
     "name",
+    ...(kinds === undefined ? [] : ["kind"]),
     `MAX(ST_MaxX(shape) - ST_MinX(shape), ST_MaxY(shape) - ST_MinY(shape), ${MINIMUM_LABEL_SPAN_DEGREES}) AS spanDegrees`,
     "ST_PointOnSurface(shape) AS geometry",
     ...constants,
   ].join(", ");
-  return `SELECT ${columns} FROM (SELECT name, ST_Union(part) AS shape FROM (${parts}) GROUP BY name)`;
+  return `SELECT ${columns} FROM (SELECT ${grouped} FROM (${parts}) GROUP BY name)`
+    + ` WHERE ${unclippedCondition(bounds)}`;
+}
+
+function kindFor(kinds: Readonly<Record<string, string>>, source: InspectedLayer, outputLayer: string): string {
+  const kind = kinds[source];
+  if (kind === undefined) throw new Error(`Extract ${outputLayer} has no kind for source layer ${source}`);
+  return kind;
+}
+
+function landLabelSql(sources: readonly InspectedLayer[], constants: readonly string[], bounds: Bounds): string {
+  return labelAnchorSql("land-label", sources, constants, bounds, LABEL_KINDS);
+}
+
+function waterLabelSql(sources: readonly InspectedLayer[], constants: readonly string[], bounds: Bounds): string {
+  return labelAnchorSql("water-label", sources, constants, bounds);
+}
+
+function buoySql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("buoy", sources, (source) => {
+    const variant = variantFor(BUOY_VARIANTS, source, "buoy");
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      categoryColumn(variant),
+      codeList("BOYSHP", "shape"),
+      codeList("COLOUR", "color"),
+      codeList("COLPAT", "colorPattern"),
+      ...constants,
+      "geometry",
+    ];
+  });
+}
+
+/**
+ * WRECKS, OBSTRN and UWTROC carry point, line and area primitives. Reducing
+ * each to a point on the feature gives every danger exactly one symbol; names
+ * are not grouped, because two dangers sharing a name are still two dangers.
+ */
+function dangerSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("danger", sources, (source) => {
+    const variant = variantFor(DANGER_VARIANTS, source, "danger");
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      categoryColumn(variant),
+      "VALSOU AS depth",
+      codeList("WATLEV", "waterLevel"),
+      codeList("QUASOU", "soundingQuality"),
+      ...constants,
+      "ST_PointOnSurface(geometry) AS geometry",
+    ];
+  });
+}
+
+function harbourFacilitySql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("harbour-facility", sources, () => [
+    "OBJNAM AS name",
+    codeList("CATHAF", "category"),
+    ...constants,
+    "ST_PointOnSurface(geometry) AS geometry",
+  ]);
+}
+
+function anchorageSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("anchorage", sources, () => [
+    "OBJNAM AS name",
+    codeList("CATACH", "category"),
+    ...constants,
+    "geometry",
+  ]);
+}
+
+function restrictedAreaSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("restricted-area", sources, (source) => {
+    const variant = variantFor(RESTRICTED_AREA_VARIANTS, source, "restricted-area");
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      codeList("RESTRN", "restriction"),
+      categoryColumn(variant),
+      anchoringColumn(),
+      ...constants,
+      "geometry",
+    ];
+  });
+}
+
+/**
+ * A restricted area is clipped to its cell, so each cell carries its own cut
+ * edge. Two cells meeting across one area then draw a seam along their shared
+ * boundary that is not a feature of the chart. Subtracting the cell's own
+ * coverage boundary removes exactly those cut edges: each cell's outline stops
+ * at the boundary, where the neighbouring cell's outline resumes, and the area
+ * reads as the single polygon it is. An area that never reaches the cell edge
+ * passes through whole.
+ */
+function restrictedAreaEdgeSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  const areas = unionSql("restricted-area-edge", sources, (source) => {
+    const variant = variantFor(RESTRICTED_AREA_VARIANTS, source, "restricted-area-edge");
+    return ["OBJNAM AS name", `'${variant.kind}' AS kind`, anchoringColumn(), "geometry"];
+  });
+  const trimmed = `ST_Difference(ST_Boundary(area.geometry), `
+    + `ST_Buffer(ST_Boundary(cover.extent), ${EDGE_TOLERANCE_DEGREES}))`;
+  const columns = ["name", "kind", "anchoring", ...constants, `${trimmed} AS geometry`];
+  return `SELECT * FROM (SELECT ${columns.join(", ")} FROM (${areas}) area, `
+    + `(SELECT ST_Union(geometry) AS extent FROM M_COVR WHERE CATCOV = 1) cover) `
+    + `WHERE geometry IS NOT NULL`;
+}
+
+/**
+ * RESTRN code 1 prohibits anchoring and code 2 restricts it. Deriving the
+ * answer here saves the webapp from parsing a code list in a style expression.
+ * The list is wrapped in commas so that code 1 cannot match inside 10, 16 or 17.
+ */
+function anchoringColumn(): string {
+  const codes = `',' || ${codeListExpression("RESTRN")} || ','`;
+  return `CASE WHEN instr(${codes}, ',1,') > 0 THEN 'prohibited'`
+    + ` WHEN instr(${codes}, ',2,') > 0 THEN 'restricted' END AS anchoring`;
+}
+
+function cableSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("cable", sources, (source) => {
+    const variant = variantFor(CABLE_VARIANTS, source, "cable");
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      categoryColumn(variant),
+      ...constants,
+      "geometry",
+    ];
+  });
 }
 
 /** Fails early and by name when GDAL lacks the SpatiaLite functions labels need. */
@@ -397,7 +727,7 @@ export async function convertCell(options: ConvertCellOptions, runner: CommandRu
     });
     if (extracts.some((extract) => extract.dialect === "SQLITE")) await requireSpatialite(baseCell, options, runner);
     for (const [index, extract] of extracts.entries()) {
-      await runner(extractionCommand(baseCell, stagingDatabase, extract, cell, index === 0, options.ogr2ogr));
+      await runner(extractionCommand(baseCell, stagingDatabase, extract, cell, bounds, index === 0, options.ogr2ogr));
     }
     const stagingSummary = await runner(stagingSummaryCommand(stagingDatabase, options.ogrinfo));
     const producedLayers = parseProducedLayers(
