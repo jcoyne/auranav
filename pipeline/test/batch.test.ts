@@ -9,6 +9,41 @@ const generatedAt = "2026-09-17T12:00:00Z";
 const retrievedAt = "2026-09-17T11:00:00Z";
 
 describe("convertExchangeSet", () => {
+  it("keeps whole cells whose coverage meets the requested region and drops the rest", async () => {
+    const fixture = await exchangeSet(["US2BBBBB", "US1AAAAA"]);
+    const output = path.join(fixture.root, "output");
+    const converted: string[] = [];
+    const extents: Record<string, number[]> = {
+      US1AAAAA: [-92, 46.5, -91, 47.5],   // inside the region
+      US2BBBBB: [-88, 43, -87, 44],       // Lake Michigan, outside it
+    };
+    const runner = async (command: { readonly args: readonly string[] }) => {
+      const cell = path.basename(String(command.args.at(-2)), ".000");
+      return {
+        stdout: JSON.stringify({
+          driverShortName: "S57",
+          layers: [{ name: "M_COVR", geometryFields: [{ extent: extents[cell] }] }],
+        }),
+        stderr: "",
+      };
+    };
+
+    const manifestPath = await convertExchangeSet(
+      { ...options(fixture.input, fixture.agreement, output), bounds: [-93, 46.4, -89.3, 48] },
+      async (cellOptions) => {
+        converted.push(path.basename(cellOptions.baseCell, ".000"));
+        return await fakeConvertCell(cellOptions, extents[path.basename(cellOptions.baseCell, ".000")] as [number, number, number, number]);
+      },
+      runner,
+    );
+
+    // A cell is kept or dropped whole: its coverage metadata describes its full
+    // extent, so clipping the tiles would leave that metadata overstating them.
+    expect(converted).toEqual(["US1AAAAA"]);
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { cells: { name: string }[] };
+    expect(manifest.cells.map((cell) => cell.name)).toEqual(["US1AAAAA"]);
+  });
+
   it("combines sorted cell conversions into one atomic package and can limit a smoke test", async () => {
     const fixture = await exchangeSet(["US2BBBBB", "US1AAAAA"]);
     const output = path.join(fixture.root, "output");

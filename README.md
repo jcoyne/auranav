@@ -20,7 +20,7 @@ npm run dev
 ```
 
 With the generated Wisconsin package present, open `http://localhost:5173/`.
-The development server selects `data/packages/wisconsin/manifest.json` by default.
+The development server selects `data/packages/western-lake-superior/manifest.json` by default.
 
 Each project has its own README with local development commands. Downloaded and generated chart data belongs under `data/` and is ignored by Git.
 
@@ -30,7 +30,7 @@ Each project has its own README with local development commands. Downloaded and 
 
 ```sh
 npm run deploy
-DEPLOY_DEST=/path/to/site/auranav DEPLOY_BASE=/auranav/ DEPLOY_PACKAGE=wisconsin npm run deploy
+DEPLOY_DEST=/path/to/site/auranav DEPLOY_BASE=/auranav/ DEPLOY_PACKAGE=western-lake-superior npm run deploy
 ```
 
 The subdirectory must be baked in at build time, because Vite resolves asset URLs against it and the application registers its service worker under that scope. Production builds have no default chart package, so the script points the viewer at the package copy it deploys alongside the application. The script copies files only; committing and publishing the destination is a separate, deliberate step.

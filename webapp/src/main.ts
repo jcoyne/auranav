@@ -131,7 +131,7 @@ async function initializeChart(): Promise<void> {
     window.location.search,
     window.location.href,
     import.meta.env.VITE_CHART_MANIFEST_URL
-      ?? (import.meta.env.DEV ? "/data/packages/wisconsin/manifest.json" : undefined),
+      ?? (import.meta.env.DEV ? "/data/packages/western-lake-superior/manifest.json" : undefined),
   );
 
   try {

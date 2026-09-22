@@ -7,7 +7,7 @@ set -euo pipefail
 DEST=${DEPLOY_DEST:-/Users/jcoyne85/workspace/jcoyne/jcoyne.github.io/auranav}
 # The site subdirectory the app is served from, e.g. https://host/auranav/.
 BASE=${DEPLOY_BASE:-/auranav/}
-PACKAGE=${DEPLOY_PACKAGE:-wisconsin}
+PACKAGE=${DEPLOY_PACKAGE:-western-lake-superior}
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 package_dir="$repo_root/data/packages/$PACKAGE"

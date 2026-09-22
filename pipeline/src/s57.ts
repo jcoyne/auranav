@@ -618,6 +618,27 @@ export function tileCommand(
   };
 }
 
+/**
+ * Reads only the extent of a cell's positive coverage, which is enough to decide
+ * whether the cell falls in a requested region. Far cheaper than converting it.
+ */
+export function coverageExtentCommand(baseCell: string, ogrinfo = "ogrinfo"): Command {
+  return {
+    executable: ogrinfo,
+    args: [
+      "-ro", "-json", "-so", "-oo", "UPDATES=APPLY", "-where", "CATCOV = 1",
+      path.resolve(baseCell), "M_COVR",
+    ],
+  };
+}
+
+export function parseCoverageExtent(summaryJson: string, cellName: string): Bounds {
+  const document = parseOgrDocument(summaryJson, `${cellName} coverage extent`);
+  const layer = document.layers?.find((candidate) => candidate.name === "M_COVR");
+  if (layer === undefined) throw new Error(`Cell ${cellName} has no M_COVR coverage layer`);
+  return parseBounds(layer.geometryFields?.[0]?.extent, `M_COVR of ${cellName}`);
+}
+
 export function packageSummaryCommand(pmtiles: string, ogrinfo = "ogrinfo"): Command {
   return { executable: ogrinfo, args: ["-ro", "-json", "-summary", path.resolve(pmtiles)] };
 }

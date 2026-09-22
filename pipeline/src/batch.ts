@@ -2,7 +2,14 @@ import { copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs
 import path from "node:path";
 import { inspectExchangeSet } from "./inventory.js";
 import { validateManifest } from "./manifest.js";
-import { CancelledCellError, convertCell, type ConvertCellOptions } from "./s57.js";
+import {
+  CancelledCellError,
+  convertCell,
+  type ConvertCellOptions,
+  coverageExtentCommand,
+  parseCoverageExtent,
+} from "./s57.js";
+import { type CommandRunner, runCommand } from "./process.js";
 
 type Bounds = readonly [number, number, number, number];
 type CellConverter = (options: ConvertCellOptions) => Promise<string>;
@@ -18,6 +25,13 @@ export interface ConvertExchangeSetOptions {
   readonly generatedAt?: string;
   readonly minZoom?: number;
   readonly maxZoom?: number;
+  /**
+   * Keep only cells whose positive coverage intersects this region. Whole cells
+   * are kept or dropped, never clipped: a cell's coverage mask, edition and
+   * update history describe its full extent, and clipping the tiles would leave
+   * that metadata describing area the package no longer holds.
+   */
+  readonly bounds?: Bounds;
   /** Process the first N cells in inventory order. Intended for smoke tests. */
   readonly limit?: number;
   /** Maximum cell conversions to run concurrently. Defaults to four. */
@@ -47,6 +61,7 @@ interface CellManifest {
 export async function convertExchangeSet(
   options: ConvertExchangeSetOptions,
   converter: CellConverter = convertCell,
+  runner: CommandRunner = runCommand,
 ): Promise<string> {
   if (options.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 1)) {
     throw new Error("limit must be a positive integer");
@@ -59,8 +74,29 @@ export async function convertExchangeSet(
   const inventory = await inspectExchangeSet(inputDirectory);
   if (inventory.inputKind !== "directory") throw new Error("convert-exchange-set requires an extracted exchange-set directory");
   if (!inventory.valid) throw new Error(inventory.issues.map((issue) => issue.message).join("; "));
-  const selectedCells = options.limit === undefined ? inventory.cells : inventory.cells.slice(0, options.limit);
+  const regionCells = options.bounds === undefined
+    ? inventory.cells
+    : await cellsWithin(inventory.cells, options.bounds);
+  if (options.bounds !== undefined && regionCells.length === 0) {
+    throw new Error("No cell in the exchange set intersects the requested bounds");
+  }
+  const selectedCells = options.limit === undefined ? regionCells : regionCells.slice(0, options.limit);
   if (selectedCells.length === 0) throw new Error("The exchange set contains no cells to convert");
+
+  async function cellsWithin(
+    candidates: typeof inventory.cells,
+    region: Bounds,
+  ): Promise<typeof inventory.cells> {
+    const kept = [];
+    for (const candidate of candidates) {
+      if (candidate.base === null) continue;
+      const baseCell = path.resolve(inputDirectory, candidate.base);
+      if (!isWithin(inputDirectory, baseCell)) continue;
+      const summary = await runner(coverageExtentCommand(baseCell, options.ogrinfo));
+      if (intersects(parseCoverageExtent(summary.stdout, candidate.name), region)) kept.push(candidate);
+    }
+    return kept;
+  }
 
   const outputDirectory = path.resolve(options.outputDirectory);
   await requireAbsent(outputDirectory);
@@ -200,6 +236,10 @@ function unionBounds(bounds: readonly Bounds[]): Bounds {
     Math.max(...bounds.map((item) => item[2])),
     Math.max(...bounds.map((item) => item[3])),
   ];
+}
+
+function intersects(left: Bounds, right: Bounds): boolean {
+  return left[0] <= right[2] && left[2] >= right[0] && left[1] <= right[3] && left[3] >= right[1];
 }
 
 async function requireAbsent(target: string): Promise<void> {

@@ -50,6 +50,23 @@ try {
   process.exitCode = 1;
 }
 
+function optionalBounds(
+  values: Map<string, string>,
+  key: string,
+): readonly [number, number, number, number] | undefined {
+  const raw = values.get(key);
+  if (raw === undefined) return undefined;
+  const parts = raw.split(",").map((part) => Number(part.trim()));
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
+    usage(`${key} must be four comma-separated numbers: west,south,east,north`);
+  }
+  const [west, south, east, north] = parts as [number, number, number, number];
+  if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) {
+    usage(`${key} must be a valid west,south,east,north extent`);
+  }
+  return [west, south, east, north];
+}
+
 function usage(problem?: string): never {
   if (problem !== undefined) console.error(problem);
   console.error(`Usage:
@@ -61,7 +78,10 @@ function usage(problem?: string): never {
   npm run cli -- convert-exchange-set <extracted-directory> --output <directory> --package-id <id>
     --name <name> --source-url <url> --retrieved-at <date-time> --user-agreement <file>
     [--generated-at <date-time>] [--min-zoom <0-22>] [--max-zoom <0-22>]
-    [--limit <count>] [--jobs <1-16>]`);
+    [--limit <count>] [--jobs <1-16>] [--bounds <west,south,east,north>]
+
+  --bounds keeps only cells whose coverage intersects the region. Whole cells are kept, never
+  clipped, so a cell overlapping the edge is included in full.`);
   process.exit(2);
 }
 
@@ -70,13 +90,14 @@ function parseBatchOptions(args: readonly string[]): ConvertExchangeSetOptions {
   if (inputDirectory === undefined || inputDirectory.startsWith("--")) usage("convert-exchange-set requires an extracted directory");
   const values = parseOptionPairs(tokens, new Set([
     "--output", "--package-id", "--name", "--source-url", "--retrieved-at", "--user-agreement",
-    "--generated-at", "--min-zoom", "--max-zoom", "--limit", "--jobs",
+    "--generated-at", "--min-zoom", "--max-zoom", "--limit", "--jobs", "--bounds",
   ]), "convert-exchange-set");
   const required = (key: string): string => requireOption(values, key, "convert-exchange-set");
   const minZoom = optionalInteger(values, "--min-zoom");
   const maxZoom = optionalInteger(values, "--max-zoom");
   const limit = optionalInteger(values, "--limit");
   const jobs = optionalInteger(values, "--jobs");
+  const bounds = optionalBounds(values, "--bounds");
   return {
     inputDirectory,
     outputDirectory: required("--output"),
@@ -90,6 +111,7 @@ function parseBatchOptions(args: readonly string[]): ConvertExchangeSetOptions {
     ...(maxZoom === undefined ? {} : { maxZoom }),
     ...(limit === undefined ? {} : { limit }),
     ...(jobs === undefined ? {} : { jobs }),
+    ...(bounds === undefined ? {} : { bounds }),
   };
 }
 

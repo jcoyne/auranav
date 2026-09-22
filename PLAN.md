@@ -14,7 +14,12 @@ The application is not an ECDIS and is not certified for navigation.
 - Preprocess NOAA S-57 exchange sets outside the browser.
 - Package charts for offline use and retain their source, edition, update, scale, units, datum, and coverage metadata.
 - Store complete chart packages in the browser's Origin Private File System (OPFS), with a service worker responsible only for the application shell.
-- Start with Wisconsin NOAA ENC coverage.
+- Start with Wisconsin NOAA ENC coverage, packaged as western Lake Superior only. The exchange set
+  also covers Lake Michigan and a Lake Huron overview cell; carrying all of it cost 103 MB against
+  31 MB for the region actually being cruised, and a single Lake Huron overview cell was 30% of that.
+- Select cells for a package by region, keeping or dropping whole cells. A cell's coverage mask,
+  edition and update history describe its full extent, so clipping the tiles would leave that
+  metadata overstating what the package holds, which the overscale and cell-selection logic trusts.
 
 ## System boundary
 
