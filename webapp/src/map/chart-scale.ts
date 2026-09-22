@@ -35,14 +35,18 @@ export function evaluateChartScale(
   };
 }
 
-export function displayScaleDenominator(zoom: number, latitude: number): number {
+/** Metres of ground covered by one screen pixel at this zoom and latitude. */
+export function groundResolutionMetresPerPixel(zoom: number, latitude: number): number {
   const safeZoom = Number.isFinite(zoom) ? zoom : 0;
   const safeLatitude = Number.isFinite(latitude)
     ? Math.max(-MAX_MERCATOR_LATITUDE, Math.min(MAX_MERCATOR_LATITUDE, latitude))
     : 0;
-  const groundResolution = EARTH_CIRCUMFERENCE_METRES * Math.cos(safeLatitude * Math.PI / 180)
+  return EARTH_CIRCUMFERENCE_METRES * Math.cos(safeLatitude * Math.PI / 180)
     / (MAPLIBRE_TILE_SIZE * 2 ** safeZoom);
-  return groundResolution / STANDARD_PIXEL_SIZE_METRES;
+}
+
+export function displayScaleDenominator(zoom: number, latitude: number): number {
+  return groundResolutionMetresPerPixel(zoom, latitude) / STANDARD_PIXEL_SIZE_METRES;
 }
 
 function contains(bounds: ChartCell["bounds"], longitude: number, latitude: number): boolean {

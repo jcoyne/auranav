@@ -4,6 +4,7 @@ import { parseChartPackageManifest } from "./chart-package";
 import { configuredManifestUrl } from "./chart-package-url";
 import { MapControls } from "./controls/map-controls";
 import { NorthIndicator } from "./controls/north-indicator";
+import { ScaleBar } from "./controls/scale-bar";
 import { PositionTracker, type PositionState } from "./gps/position-tracker";
 import { centerMapOn } from "./map/center-on-position";
 import { createMap } from "./map/create-map";
@@ -40,6 +41,7 @@ import {
 const mapElement = requiredElement("map");
 const controlsElement = requiredElement("map-controls");
 const northIndicatorElement = requiredElement("north-indicator");
+const scaleBarElement = requiredElement("scale-bar");
 const chartStatusElement = requiredElement("chart-status");
 const locationStatusElement = requiredElement("location-status");
 const scaleStatusElement = requiredElement("scale-status");
@@ -125,6 +127,7 @@ if (mapSettings.showTrack) {
 }
 
 new NorthIndicator(northIndicatorElement, map);
+new ScaleBar(scaleBarElement, map);
 
 map.on("dragstart", () => {
   if (!controls.isFollowing) return;

@@ -190,6 +190,38 @@ button { font: inherit; }
   transition: transform 120ms linear;
 }
 
+/*
+ * Sits under the compass on the same right-hand margin. Deliberately plain: a
+ * tick at each end and a length above, no panel, so it reads over the chart
+ * without competing with it.
+ */
+.scale-bar {
+  position: absolute;
+  z-index: 2;
+  top: 3.9rem;
+  right: max(1rem, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.scale-bar-label {
+  color: #092a3b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+
+/* The rule runs down the outer margin; its end ticks point in, toward the chart. */
+.scale-bar-rule {
+  width: 0.4rem;
+  border: 1px solid #092a3b;
+  border-left: 0;
+  box-shadow: 0 0 3px #fff;
+}
+
 .north-button:hover { background: #e8f6f7; }
 .north-button:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
 .north-button:active { transform: translateY(1px); }
