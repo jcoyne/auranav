@@ -12,6 +12,13 @@ import {
 } from "./demo-chart";
 import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
 import { landLabelFilter } from "./land";
+import {
+  AREA_FEATURE,
+  type ChartInteraction,
+  chooseInteraction,
+  LINE_FEATURE,
+  POINT_FEATURE,
+} from "./feature-popup";
 import { depthConversionFactor, depthUnitLabel, formatDepthInUnit } from "./depth";
 import { formatLightDetails } from "./light";
 import { addLightFlareImages, lightFlareIconExpression } from "./light-icon";
@@ -87,6 +94,10 @@ export function addPackageChartLayers(
   registerPmtilesProtocol();
   const added = new Map<number, string[]>();
   const usageBands = new Map(manifest.cells.map((cell) => [cell.name, cell.usageBand]));
+  // One handler for every chart layer, so overlapping features yield a single
+  // popup for whichever feature the tap was most specifically on.
+  const interactions: ChartInteraction[] = [];
+  addPopupDispatcher(map, interactions);
   let visibleCellNames = new Set<string>();
 
   return {
@@ -131,6 +142,7 @@ export function addPackageChartLayers(
           index,
           tileSet.layers,
           manifest.depth.displayUnit,
+          interactions,
           beforeId,
         );
         added.set(index, layerIds);
@@ -205,6 +217,8 @@ type LayerContext = {
   readonly index: number;
   readonly displayUnit: DepthUnit;
   readonly beforeId: string | undefined;
+  /** Collected as layers are added, then read by the one click handler. */
+  readonly interactions: ChartInteraction[];
 };
 
 type ChartLayerSpecification = Parameters<MapLibreMap["addLayer"]>[0];
@@ -229,9 +243,10 @@ function addVectorLayers(
   index: number,
   layers: TileLayer[],
   displayUnit: DepthUnit,
+  interactions: ChartInteraction[],
   beforeId?: string,
 ): string[] {
-  const context: LayerContext = { map, sourceId, index, displayUnit, beforeId };
+  const context: LayerContext = { map, sourceId, index, displayUnit, beforeId, interactions };
   const layerIds: string[] = [];
   const phase = (
     sourceLayer: TileLayer,
@@ -356,7 +371,7 @@ function addAnchorageAreaLayers(context: LayerContext): string[] {
     "source-layer": "anchorage",
     paint: { "fill-color": "#4f86b3", "fill-opacity": 0.16 },
   });
-  addFeatureInteraction(context.map, fillLayerId, "chart-anchorage-fill-", formatAnchorageDetails);
+  addFeatureInteraction(context, fillLayerId, "chart-anchorage-fill-", AREA_FEATURE, formatAnchorageDetails);
   return [fillLayerId, addLayer(context, {
     id: `chart-anchorage-outline-${context.index}`,
     type: "line",
@@ -385,9 +400,10 @@ function addRestrictedAreaLayers(context: LayerContext): string[] {
     paint: { "fill-color": TRANSPARENT },
   });
   addFeatureInteraction(
-    context.map,
+    context,
     fillLayerId,
     "chart-restricted-area-fill-",
+    AREA_FEATURE,
     formatRestrictedAreaDetails,
   );
   addAnchoringPatternImage(context.map);
@@ -476,7 +492,7 @@ function addSoundingHitLayer(context: LayerContext): string[] {
       "circle-radius": 12,
     },
   });
-  addSoundingInteraction(context.map, layerId, context.displayUnit);
+  addFeatureInteraction(context, layerId, "chart-sounding-hit-", POINT_FEATURE, (properties) => formatSoundingDetails(properties, context.displayUnit));
   return [layerId];
 }
 
@@ -492,7 +508,7 @@ function addLightHitLayer(context: LayerContext): string[] {
       "circle-radius": 16,
     },
   });
-  addFeatureInteraction(context.map, layerId, "chart-light-hit-", formatLightDetails);
+  addFeatureInteraction(context, layerId, "chart-light-hit-", POINT_FEATURE, formatLightDetails);
   return [layerId];
 }
 
@@ -505,7 +521,7 @@ function addBuoyHitLayer(context: LayerContext): string[] {
     minzoom: BUOY_MIN_ZOOM,
     paint: { "circle-color": TRANSPARENT, "circle-radius": 16 },
   });
-  addFeatureInteraction(context.map, layerId, "chart-buoy-hit-", formatBuoyDetails);
+  addFeatureInteraction(context, layerId, "chart-buoy-hit-", POINT_FEATURE, formatBuoyDetails);
   return [layerId];
 }
 
@@ -520,9 +536,10 @@ function addDangerHitLayer(context: LayerContext): string[] {
   });
   const displayUnit = context.displayUnit;
   addFeatureInteraction(
-    context.map,
+    context,
     layerId,
     "chart-danger-hit-",
+    POINT_FEATURE,
     (properties) => formatDangerDetails(properties, displayUnit),
   );
   return [layerId];
@@ -538,9 +555,10 @@ function addHarbourFacilityHitLayer(context: LayerContext): string[] {
     paint: { "circle-color": TRANSPARENT, "circle-radius": 16 },
   });
   addFeatureInteraction(
-    context.map,
+    context,
     layerId,
     "chart-harbour-facility-hit-",
+    POINT_FEATURE,
     formatHarbourFacilityDetails,
   );
   return [layerId];
@@ -555,7 +573,7 @@ function addCableHitLayer(context: LayerContext): string[] {
     minzoom: DANGER_MIN_ZOOM,
     paint: { "line-color": TRANSPARENT, "line-width": 16 },
   });
-  addFeatureInteraction(context.map, layerId, "chart-cable-hit-", formatCableDetails);
+  addFeatureInteraction(context, layerId, "chart-cable-hit-", LINE_FEATURE, formatCableDetails);
   return [layerId];
 }
 
@@ -1041,49 +1059,39 @@ export function addDemoChartLayers(map: MapLibreMap): void {
   });
 }
 
-function addSoundingInteraction(map: MapLibreMap, layerId: string, displayUnit: DepthUnit): void {
-  map.on("mouseenter", layerId, () => {
-    map.getCanvas().style.cursor = "pointer";
-  });
-  map.on("mouseleave", layerId, () => {
-    map.getCanvas().style.cursor = "";
-  });
-  map.on("click", layerId, (event: MapLayerMouseEvent) => {
-    const depth = event.features?.[0]?.properties?.depth;
-    if (typeof depth !== "number") return;
-    new Popup({ closeButton: true, focusAfterOpen: true })
-      .setLngLat(event.lngLat)
-      .setText(`${formatDepthInUnit(depth, displayUnit)} ${depthUnitLabel(displayUnit)}`)
-      .addTo(map);
-  });
+function formatSoundingDetails(properties: ChartFeatureProperties, displayUnit: DepthUnit): string {
+  const depth = properties.depth;
+  if (typeof depth !== "number") return "";
+  return `${formatDepthInUnit(depth, displayUnit)} ${depthUnitLabel(displayUnit)}`;
 }
 
 /**
- * Opens a popup for one kind of chart feature. Coarser fallback cells remain
- * rendered beneath detailed coverage, so only the uppermost layer of that kind
- * answers a tap where cells overlap.
+ * Registers a layer as tappable. The popup is opened by the single handler in
+ * `addPopupDispatcher`, so a tap landing on a sounding inside a restricted area
+ * describes the sounding instead of stacking two popups over each other.
  */
 function addFeatureInteraction(
-  map: MapLibreMap,
+  context: LayerContext,
   layerId: string,
-  peerLayerPrefix: string,
+  peerPrefix: string,
+  precedence: number,
   format: (properties: ChartFeatureProperties) => string,
 ): void {
+  const { map } = context;
   map.on("mouseenter", layerId, () => {
     map.getCanvas().style.cursor = "pointer";
   });
   map.on("mouseleave", layerId, () => {
     map.getCanvas().style.cursor = "";
   });
-  map.on("click", layerId, (event: MapLayerMouseEvent) => {
-    const topLayerId = map.queryRenderedFeatures(event.point)
-      .find((feature) => feature.layer.id.startsWith(peerLayerPrefix))?.layer.id;
-    if (topLayerId !== undefined && topLayerId !== layerId) return;
-    const properties = (event.features ?? []).flatMap((feature) => (
-      feature.properties === null ? [] : [feature.properties as ChartFeatureProperties]
-    ));
-    if (properties.length === 0) return;
-    const details = formatFeatureDetailsList(properties, format);
+  context.interactions.push({ layerId, peerPrefix, precedence, format });
+}
+
+function addPopupDispatcher(map: MapLibreMap, interactions: readonly ChartInteraction[]): void {
+  map.on("click", (event: MapLayerMouseEvent) => {
+    const chosen = chooseInteraction(map.queryRenderedFeatures(event.point), interactions);
+    if (chosen === undefined) return;
+    const details = formatFeatureDetailsList(chosen.properties, chosen.interaction.format);
     if (details === "") return;
     new Popup({ closeButton: true, focusAfterOpen: true })
       .setLngLat(event.lngLat)

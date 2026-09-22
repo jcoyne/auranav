@@ -182,7 +182,7 @@ describe("package chart layers", () => {
         "text-allow-overlap": false,
       }),
     }), undefined);
-    expect(map.on).toHaveBeenCalledWith("click", "chart-light-hit-0", expect.any(Function));
+    expect(map.on).toHaveBeenCalledWith("mouseenter", "chart-light-hit-0", expect.any(Function));
   });
 
 
@@ -325,9 +325,14 @@ describe("package chart layers", () => {
       "chart-cable-0": "cable",
       "chart-cable-hit-0": "cable",
     });
-    expect(map.on).toHaveBeenCalledWith("click", "chart-buoy-hit-0", expect.any(Function));
-    expect(map.on).toHaveBeenCalledWith("click", "chart-danger-hit-0", expect.any(Function));
-    expect(map.on).toHaveBeenCalledWith("click", "chart-restricted-area-fill-0", expect.any(Function));
+    // Popups come from one map-level handler, not one per layer: two layers
+    // answering the same tap used to stack two popups over each other.
+    for (const layerId of ["chart-buoy-hit-0", "chart-danger-hit-0", "chart-restricted-area-fill-0"]) {
+      expect(map.on).toHaveBeenCalledWith("mouseenter", layerId, expect.any(Function));
+      expect(map.on).not.toHaveBeenCalledWith("click", layerId, expect.any(Function));
+    }
+    expect(vi.mocked(map.on).mock.calls.filter(([type, arg]) => type === "click" && typeof arg === "function"))
+      .toHaveLength(1);
   });
 
   it("adds a layer only for the source layers a tile set declares", () => {
