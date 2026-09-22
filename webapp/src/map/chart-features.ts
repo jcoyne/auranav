@@ -112,6 +112,10 @@ export function formatRestrictedAreaDetails(properties: ChartFeatureProperties):
     anchoring === undefined ? undefined : ANCHORING_HEADINGS[anchoring] ?? `Anchoring ${anchoring}`,
     labelled("Restrictions", describeS57CodeList("RESTRN", properties.restriction)),
     labelled("Category", describeS57CodeList("CATREA", properties.category)),
+    // S-57 never published codes 16 through 27, so a restriction can reach the
+    // chart with no known meaning. NOAA cites the governing regulation here,
+    // which is the only account of it available.
+    labelled("Authority", text(properties.information)),
   ]);
 }
 

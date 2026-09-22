@@ -323,16 +323,32 @@ describe("S-57 commands", () => {
     const anchoring = `CASE WHEN instr(${guarded}, ',1,') > 0 THEN 'prohibited'`
       + ` WHEN instr(${guarded}, ',2,') > 0 THEN 'restricted' END AS anchoring`;
 
+    const charted = `(${codeList("RESTRN")} IS NULL OR ${codeList("RESTRN")} <> '16')`;
     expect(sql.split(" UNION ALL ")).toHaveLength(3);
     expect(sql.split(" UNION ALL ")[0]).toBe(
       "SELECT OBJNAM AS name, 'cable-area' AS kind, "
-      + `${codeList("RESTRN")} AS restriction, NULL AS category, ${anchoring}, `
-      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM CBLARE",
+      + `${codeList("RESTRN")} AS restriction, INFORM AS information, NULL AS category, ${anchoring}, `
+      + `'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM CBLARE WHERE ${charted}`,
     );
     // S-57 gives CATREA to RESARE alone, so the other two classes project NULL.
-    expect(sql).toContain(`'restricted' AS kind, ${codeList("RESTRN")} AS restriction, ${codeList("CATREA")} AS category`);
-    expect(sql).toContain(`'pipeline-area' AS kind, ${codeList("RESTRN")} AS restriction, NULL AS category`);
+    expect(sql).toContain(`'restricted' AS kind, ${codeList("RESTRN")} AS restriction, INFORM AS information, ${codeList("CATREA")} AS category`);
+    expect(sql).toContain(`'pipeline-area' AS kind, ${codeList("RESTRN")} AS restriction, INFORM AS information, NULL AS category`);
     expect(sql.match(/AS anchoring/g)).toHaveLength(3);
+  });
+
+  it("leaves the 40 CFR 140 No-Discharge Zone off the chart", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["CBLARE", "RESARE", "PIPARE"] as const;
+    const charted = `(${codeList("RESTRN")} IS NULL OR ${codeList("RESTRN")} <> '16')`;
+
+    for (const layer of ["restricted-area", "restricted-area-edge"] as const) {
+      const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec(layer, sources), parsed, bounds, false));
+      // One exclusion per source branch, and RESTRN 16 never co-occurs with
+      // another code in this data, so no anchoring rule can be lost with it.
+      expect(sql.match(new RegExp(charted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(3);
+      expect(sql).not.toContain("<> '1'");
+      expect(sql).not.toContain("<> '2'");
+    }
   });
 
   it("subtracts the cell boundary from a restricted area's outline", () => {

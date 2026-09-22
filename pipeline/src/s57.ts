@@ -513,6 +513,22 @@ function anchorageSql(sources: readonly InspectedLayer[], constants: readonly st
   ]);
 }
 
+/**
+ * RESTRN 16 prohibits discharging. In NOAA's Great Lakes cells it is the
+ * 40 CFR 140 No-Discharge Zone, which covers essentially all Wisconsin and
+ * Michigan water: a standing regulation rather than a local restriction, and
+ * charting it would lay one area over the whole chart. It never co-occurs with
+ * another restriction in this data, so dropping it cannot hide an anchoring
+ * rule. The `NULL` arm keeps areas that carry no RESTRN at all, such as a
+ * nature reserve described only by CATREA.
+ */
+const DISCHARGE_ZONE_RESTRICTION = "16";
+
+function chartedRestrictionCondition(): string {
+  const codes = codeListExpression("RESTRN");
+  return `(${codes} IS NULL OR ${codes} <> '${DISCHARGE_ZONE_RESTRICTION}')`;
+}
+
 function restrictedAreaSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
   return unionSql("restricted-area", sources, (source) => {
     const variant = variantFor(RESTRICTED_AREA_VARIANTS, source, "restricted-area");
@@ -520,12 +536,15 @@ function restrictedAreaSql(sources: readonly InspectedLayer[], constants: readon
       "OBJNAM AS name",
       `'${variant.kind}' AS kind`,
       codeList("RESTRN", "restriction"),
+      // NOAA cites the governing regulation here, which is the only intelligible
+      // account of a restriction whose code S-57 never published.
+      "INFORM AS information",
       categoryColumn(variant),
       anchoringColumn(),
       ...constants,
       "geometry",
     ];
-  });
+  }, chartedRestrictionCondition());
 }
 
 /**
@@ -541,7 +560,7 @@ function restrictedAreaEdgeSql(sources: readonly InspectedLayer[], constants: re
   const areas = unionSql("restricted-area-edge", sources, (source) => {
     const variant = variantFor(RESTRICTED_AREA_VARIANTS, source, "restricted-area-edge");
     return ["OBJNAM AS name", `'${variant.kind}' AS kind`, anchoringColumn(), "geometry"];
-  });
+  }, chartedRestrictionCondition());
   const trimmed = `ST_Difference(ST_Boundary(area.geometry), `
     + `ST_Buffer(ST_Boundary(cover.extent), ${EDGE_TOLERANCE_DEGREES}))`;
   const columns = ["name", "kind", "anchoring", ...constants, `${trimmed} AS geometry`];

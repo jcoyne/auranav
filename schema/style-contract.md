@@ -128,7 +128,14 @@ Polygon features from `CBLARE`, `RESARE` and `PIPARE`, where a restriction appli
 
 - `name`: `OBJNAM` when named
 - `kind`: `cable-area`, `restricted` or `pipeline-area`
-- `restriction`: code list from `RESTRN`
+- `restriction`: code list from `RESTRN`. An area whose only restriction is code 16 is excluded from
+  the layer: in NOAA's Great Lakes cells that is the 40 CFR 140 No-Discharge Zone, which covers
+  essentially all Wisconsin and Michigan water. It is a standing regulation, not a local restriction,
+  and charting it would lay one area over the whole chart. Code 16 never co-occurs with another
+  restriction in this data, so excluding it cannot drop an anchoring rule.
+- `information`: `INFORM`, the regulation NOAA cites, such as `40 CFR 140` or
+  `Security zone, 33 CFR 165.910`. For a restriction whose code S-57 never published this is the only
+  intelligible account of it, so a display should surface it.
 - `category`: code list from `CATREA`, which S-57 gives to `RESARE` alone. Always absent on a
   `cable-area` or `pipeline-area`.
 - `anchoring`: `prohibited` when `RESTRN` contains 1, `restricted` when it contains 2, otherwise absent.

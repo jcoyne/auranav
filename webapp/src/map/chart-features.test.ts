@@ -96,6 +96,24 @@ describe("area and facility details", () => {
     ].join("\n"));
   });
 
+  it("cites the regulation behind a restriction the tables cannot name", () => {
+    // Where S-57 published no meaning for the code, NOAA's own INFORM value is
+    // the only account of the rule, so the popup has to carry it.
+    expect(formatRestrictedAreaDetails({
+      kind: "restricted",
+      restriction: "22,2,10",
+      information: "Protected area,15 CFR 922",
+      name: "Wisconsin Shipwreck Coast National Marine Sanctuary",
+      anchoring: "restricted",
+    })).toBe([
+      "Wisconsin Shipwreck Coast National Marine Sanctuary",
+      "Restricted area",
+      "Anchoring restricted",
+      "Restrictions: restriction 22, anchoring restricted, dredging restricted",
+      "Authority: Protected area,15 CFR 922",
+    ].join("\n"));
+  });
+
   it("prints a restriction code the published table does not define", () => {
     // RESTRN 24 has no entry anywhere in the S-57 tables GDAL ships. Showing the
     // code is the only honest option; guessing at wording here is not acceptable.
