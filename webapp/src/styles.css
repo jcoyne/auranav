@@ -214,12 +214,17 @@ button { font: inherit; }
   text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
 }
 
-/* The rule runs down the outer margin; its end ticks point in, toward the chart. */
+/*
+ * The rule runs down the outer margin; its end ticks point in, toward the chart.
+ * The halo is a `drop-shadow` filter, not a `box-shadow`: a box shadow follows
+ * the element's rectangle and so drew a white line down the open left edge where
+ * there is no border. A drop shadow follows what is actually painted.
+ */
 .scale-bar-rule {
   width: 0.4rem;
   border: 1px solid #092a3b;
   border-left: 0;
-  box-shadow: 0 0 3px #fff;
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);
 }
 
 .north-button:hover { background: #e8f6f7; }
