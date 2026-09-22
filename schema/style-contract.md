@@ -51,7 +51,8 @@ Point features derived from S-57 `LIGHTS` objects.
 
 ## Attribute code lists
 
-Several S-57 attributes are lists. GDAL renders them as `(count:value,value)`. The pipeline reduces
+Several S-57 attributes are lists, and several are single-valued enumerations; the sections above say
+which. GDAL renders a list as `(count:value,value)`. The pipeline reduces
 each to a comma-separated list of S-57 codes, so a tile property is always a plain string: `"3"`,
 `"3,1"`, or absent. A single-valued attribute passes through unchanged. `light` is the one exception,
 noted above.
@@ -166,6 +167,42 @@ Line features from `CBLSUB` and submarine `PIPSOL` runs.
 - `name`: `OBJNAM` when named
 - `kind`: `cable` or `pipeline`
 - `category`: code list from `CATCBL` or `CATPIP`
+- `cell`, `usageBand`, `compilationScale`
+
+## `shoreline-structure`
+
+Point, line and polygon features from `SLCONS`, `PONTON` and `FLODOC`. Geometry primitives are kept
+as they are: a pier is charted as an area in one cell and a line in another, and a display separates
+them with a `geometry-type` filter rather than the pipeline forcing one shape.
+
+- `name`: `OBJNAM` when named
+- `kind`: `construction`, `pontoon` or `floating-dock`
+- `category`: `CATSLC`, a single-valued enumeration. S-57 gives no category to `PONTON` or `FLODOC`,
+  so it is absent on those. A reader must only interpret it when `kind` is `construction`.
+- `condition`: `CONDTN`, single-valued. Code 2 is ruined, which the Apostle Islands dock ruins carry;
+  the pipeline emits it for all three source classes, so a pontoon may be ruined too.
+- `waterLevel`: code list from `WATLEV`. `PONTON` and `FLODOC` do not carry it.
+- `cell`, `usageBand`, `compilationScale`
+
+A display must not draw this layer uniformly. Around 40% of `SLCONS` is shoreline armouring —
+rip rap (`CATSLC` 8), sea wall (10), revetment (9) — which is coastline detail rather than a
+structure to tie to, and drawing it like a pier buries the piers. Every other category, including
+the ones S-57 leaves ambiguous (groyne, training wall, fender, landing steps) and the uncategorised
+features, draws as a structure: a shore work projecting into navigable water is better over-drawn
+than hidden. A ruined structure must be distinguishable from a usable one without a tap, because
+tying to a ruin is the failure this layer exists to prevent. `FLODOC` is a floating dry dock,
+a shipyard structure, and must never be portrayed or described as a berth.
+
+## `mooring`
+
+Point, line and polygon features from `MORFAC`: the dolphins, bollards, pile moorings and mooring
+buoys a vessel makes fast to.
+
+- `name`: `OBJNAM` when named
+- `category`: `CATMOR`, single-valued
+- `condition`: `CONDTN`, single-valued
+- `waterLevel`: code list from `WATLEV`
+- there is no `kind`: `MORFAC` is the only source class, so there is nothing to disambiguate
 - `cell`, `usageBand`, `compilationScale`
 
 ## S-57 code meanings

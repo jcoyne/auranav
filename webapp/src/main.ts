@@ -9,7 +9,7 @@ import { centerMapOn } from "./map/center-on-position";
 import { createMap } from "./map/create-map";
 import { addDemoChartLayers, addPackageChartLayers } from "./map/chart-layers";
 import { displayScaleDenominator, evaluateChartScale } from "./map/chart-scale";
-import { selectChartCells } from "./map/cell-selection";
+import { initialChartBounds, selectChartCells } from "./map/cell-selection";
 import { addPositionLayer, updatePositionLayer } from "./map/position-layer";
 import { addTrackLayer, setTrackLayerVisible, updateTrackLayer } from "./map/track-layer";
 import { TrackRecorder, type TrackRecorderState } from "./track/track-recorder";
@@ -166,7 +166,7 @@ async function initializeChart(): Promise<void> {
     const supportsCoverageMosaic = manifest.tileSets
       .filter((tileSet) => tileSet.format === "pmtiles")
       .every((tileSet) => tileSet.layers.includes("coverage"));
-    const [west, south, east, north] = manifest.bounds;
+    const [west, south, east, north] = initialChartBounds(manifest.cells, manifest.bounds);
     renderPackageChartStatus(chartStatusElement, manifest, manifestUrl);
     const showScaleStatus = createScaleStatusView(scaleStatusElement);
     let selectedCells = [] as typeof manifest.cells;

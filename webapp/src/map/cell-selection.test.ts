@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChartCell } from "../chart-package";
-import { selectChartCells } from "./cell-selection";
+import { initialChartBounds, selectChartCells } from "./cell-selection";
 
 function cell(name: string, usageBand: number, compilationScale: number, bounds: ChartCell["bounds"]): ChartCell {
   return {
@@ -21,6 +21,35 @@ const approaches = [
   cell("US4BBBBB", 4, 90_000, [-87, 42, -85, 44]),
 ];
 const harbour = cell("US5AAAAA", 5, 20_000, [-88.1, 42.9, -87.8, 43.2]);
+
+describe("initial chart bounds", () => {
+  const cell = (name: string, usageBand: number, bounds: [number, number, number, number]) => ({
+    name, usageBand, bounds, edition: 1, updateNumber: 0,
+    issueDate: "2026-01-01", updateApplicationDate: "2026-01-01", compilationScale: 90_000,
+  });
+
+  it("opens on the detailed coverage, not the overview cell's extent", () => {
+    // The western Lake Superior package: band-2 overview cells are kept whole by
+    // region selection, so the package bounds reach Milwaukee's latitude.
+    const cells = [
+      cell("US2GRLBA", 2, [-96, 43.2, -91.2, 48]),
+      cell("US2GRLBB", 2, [-91.2, 43.2, -86.4, 48]),
+      cell("US4WI1QF", 4, [-90.9, 46.8, -90.6, 47.1]),
+      cell("US5WI21M", 5, [-90.86, 46.78, -90.85, 46.79]),
+    ];
+    expect(initialChartBounds(cells, [-96, 43.2, -86.4, 48]))
+      .toEqual([-90.9, 46.78, -90.6, 47.1]);
+  });
+
+  it("falls back to the package extent when every cell shares one band", () => {
+    const cells = [cell("US4AAAAA", 4, [-90, 46, -89, 47]), cell("US4BBBBB", 4, [-89, 46, -88, 47])];
+    expect(initialChartBounds(cells, [-90, 46, -88, 47])).toEqual([-90, 46, -88, 47]);
+  });
+
+  it("falls back to the package extent for an empty package", () => {
+    expect(initialChartBounds([], [-90, 46, -88, 47])).toEqual([-90, 46, -88, 47]);
+  });
+});
 
 describe("selectChartCells", () => {
   it("selects intersecting fallback bands through the appropriate usage band", () => {

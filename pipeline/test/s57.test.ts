@@ -380,11 +380,48 @@ describe("S-57 commands", () => {
     );
   });
 
+  it("keeps dock and pier geometry as charted across three shoreline classes", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sources = ["SLCONS", "PONTON", "FLODOC"] as const;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("shoreline-structure", sources), parsed, bounds, false));
+    const constants = "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale";
+
+    expect(sql.split(" UNION ALL ")).toEqual([
+      "SELECT OBJNAM AS name, 'construction' AS kind, "
+      + `${codeList("CATSLC")} AS category, ${codeList("CONDTN")} AS condition, `
+      + `${codeList("WATLEV")} AS waterLevel, ${constants}, geometry FROM SLCONS`,
+      // S-57 gives PONTON and FLODOC neither CATSLC nor WATLEV, and naming an
+      // attribute a class does not define fails the whole union.
+      "SELECT OBJNAM AS name, 'pontoon' AS kind, "
+      + `NULL AS category, ${codeList("CONDTN")} AS condition, NULL AS waterLevel, ${constants}, geometry FROM PONTON`,
+      "SELECT OBJNAM AS name, 'floating-dock' AS kind, "
+      + `NULL AS category, ${codeList("CONDTN")} AS condition, NULL AS waterLevel, ${constants}, geometry FROM FLODOC`,
+    ]);
+    // Point, line and area primitives all pass through: a pier charted as an
+    // area in one cell and a line in another is separated by the display.
+    expect(sql).not.toContain("ST_PointOnSurface");
+    expect(sql).not.toContain("OGR_GEOMETRY");
+  });
+
+  it("carries a mooring facility's category, condition and water level", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("mooring", ["MORFAC"]), parsed, bounds, false));
+
+    // MORFAC is the only class behind the layer, so it needs no kind column.
+    expect(sql).toBe(
+      `SELECT OBJNAM AS name, ${codeList("CATMOR")} AS category, `
+      + `${codeList("CONDTN")} AS condition, ${codeList("WATLEV")} AS waterLevel, `
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM MORFAC",
+    );
+    expect(sql).not.toContain("AS kind");
+    expect(sql).not.toContain("ST_PointOnSurface");
+  });
+
   it("marks every layer beyond the base chart as optional, since no cell holds them all", () => {
     const optional = EXTRACTS.filter((extract) => extract.mayBeEmpty === true).map((extract) => extract.outputLayer);
     expect(optional).toEqual([
       "land-area", "land-label", "water-label", "buoy", "danger", "harbour-facility", "anchorage",
-      "restricted-area", "restricted-area-edge", "cable",
+      "restricted-area", "restricted-area-edge", "cable", "shoreline-structure", "mooring",
     ]);
   });
 

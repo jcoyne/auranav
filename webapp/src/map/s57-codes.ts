@@ -17,16 +17,22 @@ export type S57Attribute =
   | "CATCBL"
   | "CATHAF"
   | "CATLAM"
+  | "CATMOR"
   | "CATOBS"
   | "CATPIP"
   | "CATREA"
+  | "CATSLC"
   | "CATSPM"
   | "CATWRK"
   | "COLOUR"
   | "COLPAT"
+  | "CONDTN"
   | "QUASOU"
   | "RESTRN"
   | "WATLEV";
+
+/** `CONDTN` 2. A ruin is not something to tie to, so the style reads it too. */
+export const CONDITION_RUINED = "2";
 
 type S57AttributeTable = {
   /** Used both as a popup heading and as the wording of an unknown code. */
@@ -105,6 +111,18 @@ const S57_ATTRIBUTES: Readonly<Record<S57Attribute, S57AttributeTable>> = {
       "4": "preferred channel to port lateral mark",
     },
   },
+  CATMOR: {
+    label: "mooring facility",
+    meanings: {
+      "1": "dolphin",
+      "2": "deviation dolphin",
+      "3": "bollard",
+      "4": "tie-up wall",
+      "5": "post or pile",
+      "6": "chain/wire/cable",
+      "7": "mooring buoy",
+    },
+  },
   CATOBS: {
     label: "obstruction category",
     meanings: {
@@ -150,6 +168,29 @@ const S57_ATTRIBUTES: Readonly<Record<S57Attribute, S57AttributeTable>> = {
       "23": "ecological reserve",
       "24": "no wake area",
       "25": "swinging area",
+    },
+  },
+  CATSLC: {
+    label: "shoreline construction",
+    meanings: {
+      "1": "breakwater",
+      "2": "groyne (groin)",
+      "3": "mole",
+      // Transcribed as the table prints it, stray space included, so the
+      // wording on the chart is traceably the published wording.
+      "4": "pier ( jetty)",
+      "5": "promenadepier",
+      "6": "wharf (quay)",
+      "7": "training wall",
+      "8": "rip rap",
+      "9": "revetment",
+      "10": "sea wall",
+      "11": "landing steps",
+      "12": "ramp",
+      "13": "slipway",
+      "14": "fender",
+      "15": "solid face wharf",
+      "16": "open face wharf",
     },
   },
   CATSPM: {
@@ -247,6 +288,16 @@ const S57_ATTRIBUTES: Readonly<Record<S57Attribute, S57AttributeTable>> = {
       "6": "border stripes",
     },
   },
+  CONDTN: {
+    label: "condition",
+    meanings: {
+      "1": "under construction",
+      "2": "ruined",
+      "3": "under reclamation",
+      "4": "wingless",
+      "5": "planned construction",
+    },
+  },
   QUASOU: {
     label: "sounding quality",
     meanings: {
@@ -330,6 +381,23 @@ export function describeS57CodeList(attribute: S57Attribute, value: unknown): st
   const codes = parseS57CodeList(value);
   if (codes.length === 0) return undefined;
   return codes.map((code) => describeS57Code(attribute, code)).join(", ");
+}
+
+/** Whether a code-list property carries one particular code. */
+export function s57CodeListIncludes(value: unknown, code: string): boolean {
+  return parseS57CodeList(value).includes(code);
+}
+
+/**
+ * The same membership test as a style expression. Equality against the property
+ * would miss a code that shares it with another, so the comma-delimited form is
+ * searched for the whole delimited token rather than for the digits alone.
+ */
+export function s57CodeListIncludesExpression(
+  property: string,
+  code: string,
+): ExpressionSpecification {
+  return ["in", `,${code},`, ["concat", ",", ["to-string", ["get", property]], ","]];
 }
 
 /**

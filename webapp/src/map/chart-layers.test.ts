@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LayerSpecification, Map as MapLibreMap } from "maplibre-gl";
-import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
+import { createExpression, validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { ChartPackageManifest } from "../chart-package";
 import { TILE_LAYERS } from "../chart-package";
 import { addPackageChartLayers, contourLabelExpression } from "./chart-layers";
@@ -516,6 +516,159 @@ describe("package chart layers", () => {
       .toHaveBeenCalledWith("chart-harbour-facility-label-0", "visibility", "visible");
   });
 
+  it("draws docks, piers and moorings, one layer per geometry primitive", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["coastline", "shoreline-structure", "mooring"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    // A pier is charted as an area in one cell and a line in another, and
+    // `SLCONS` also carries points, so each primitive is filtered out on its own:
+    // a fill over a line, or a line over a point, draws nothing or misdraws.
+    const expected: Readonly<Record<string, readonly [string, string, string]>> = {
+      "chart-shoreline-structure-fill-0": ["shoreline-structure", "fill", "Polygon"],
+      "chart-shoreline-structure-edge-0": ["shoreline-structure", "line", "Polygon"],
+      "chart-shoreline-structure-ruin-edge-0": ["shoreline-structure", "line", "Polygon"],
+      "chart-shoreline-structure-line-0": ["shoreline-structure", "line", "LineString"],
+      "chart-shoreline-structure-ruin-line-0": ["shoreline-structure", "line", "LineString"],
+      "chart-shoreline-structure-point-0": ["shoreline-structure", "circle", "Point"],
+      "chart-shoreline-structure-hit-line-0": ["shoreline-structure", "line", "LineString"],
+      "chart-shoreline-structure-hit-point-0": ["shoreline-structure", "circle", "Point"],
+      "chart-mooring-fill-0": ["mooring", "fill", "Polygon"],
+      "chart-mooring-line-0": ["mooring", "line", "LineString"],
+      "chart-mooring-ruin-line-0": ["mooring", "line", "LineString"],
+      "chart-mooring-point-0": ["mooring", "circle", "Point"],
+      "chart-mooring-hit-line-0": ["mooring", "line", "LineString"],
+      "chart-mooring-hit-point-0": ["mooring", "circle", "Point"],
+    };
+    for (const [layerId, [sourceLayer, type, geometryType]] of Object.entries(expected)) {
+      const layer = layers.get(layerId);
+      expect(layer, `${layerId} was not added`).toBeDefined();
+      expect(layer?.["source-layer"]).toBe(sourceLayer);
+      expect(layer?.type).toBe(type);
+      expect(JSON.stringify(layer?.filter)).toContain(`["geometry-type"],"${geometryType}"`);
+    }
+
+    // One map-level click handler still answers for all of them.
+    for (const layerId of Object.keys(expected)) {
+      expect(map.on).not.toHaveBeenCalledWith("click", layerId, expect.any(Function));
+    }
+    expect(map.on).toHaveBeenCalledWith("mouseenter", "chart-shoreline-structure-hit-point-0", expect.any(Function));
+  });
+
+  it("keeps shoreline armouring from burying the piers a vessel can tie to", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["shoreline-structure"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    const fill = layers.get("chart-shoreline-structure-fill-0");
+    const edge = layers.get("chart-shoreline-structure-edge-0");
+    const line = layers.get("chart-shoreline-structure-line-0");
+    // `CATSLC` 4 is a pier, 8 rip rap and 10 a sea wall.
+    const pier = { category: "4" };
+    const ripRap = { category: "8" };
+    const seaWall = { category: "10" };
+
+    // A berthing structure is drawn solid in the ink of the coastline; armouring
+    // is a subdued grey, narrower, and does not appear at all until the zoom
+    // where the coastline itself is drawn in detail.
+    expect(paint(fill, "fill-color", pier)).not.toEqual(paint(fill, "fill-color", ripRap));
+    expect(paint(fill, "fill-color", ripRap)).toEqual(paint(fill, "fill-color", seaWall));
+    expect(paint(fill, "fill-opacity", ripRap, 12)).toBe(0);
+    expect(paint(fill, "fill-opacity", pier, 12)).toBe(1);
+    expect(paint(fill, "fill-opacity", ripRap, 14)).toBeLessThan(1);
+    expect(paint(fill, "fill-opacity", pier, 14)).toBe(1);
+    for (const armoured of [edge, line]) {
+      expect(paint(armoured, "line-color", pier)).not.toEqual(paint(armoured, "line-color", ripRap));
+      expect(paint(armoured, "line-width", ripRap))
+        .toBeLessThan(paint(armoured, "line-width", pier) as number);
+      expect(paint(armoured, "line-opacity", ripRap, 12)).toBe(0);
+      expect(paint(armoured, "line-opacity", pier, 12)).toBe(1);
+    }
+    // The pier itself is not held back: it is drawn from the structure zoom on.
+    expect(fill?.minzoom).toBeLessThan(13);
+  });
+
+  it("tells a ruined structure apart from one a vessel can still use", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["shoreline-structure", "mooring"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    const pier = { category: "4" };
+    const ruinedPier = { category: "4", condition: "2" };
+    const fill = layers.get("chart-shoreline-structure-fill-0");
+    const point = layers.get("chart-shoreline-structure-point-0");
+
+    // Colour: a ruin is grey, never the built tan or the ink of a live structure.
+    expect(paint(fill, "fill-color", ruinedPier)).not.toEqual(paint(fill, "fill-color", pier));
+    expect(paint(point, "circle-color", ruinedPier)).not.toEqual(paint(point, "circle-color", pier));
+
+    // `line-dasharray` takes no per-feature value, so a ruin is drawn broken by
+    // layers of its own, filtered on `CONDTN` 2 against the solid layers.
+    const ruinedFilter = JSON.stringify(["in", ",2,", ["concat", ",", ["to-string", ["get", "condition"]], ","]]);
+    for (const prefix of ["chart-shoreline-structure", "chart-mooring"]) {
+      const solid = layers.get(`${prefix}-line-0`);
+      const ruin = layers.get(`${prefix}-ruin-line-0`);
+      expect(solid?.paint?.["line-dasharray"]).toBeUndefined();
+      expect(ruin?.paint?.["line-dasharray"]).toEqual([2, 2]);
+      expect(JSON.stringify(ruin?.filter)).toContain(ruinedFilter);
+      expect(JSON.stringify(solid?.filter)).toContain(`["!",${ruinedFilter}]`);
+    }
+    const ruinEdge = layers.get("chart-shoreline-structure-ruin-edge-0");
+    expect(ruinEdge?.paint?.["line-dasharray"]).toEqual([2, 2]);
+
+    // And the ruin is named on the chart, so it reads without opening a popup.
+    for (const prefix of ["chart-shoreline-structure", "chart-mooring"]) {
+      const label = layers.get(`${prefix}-ruin-label-0`);
+      expect(label?.type).toBe("symbol");
+      expect(label?.layout?.["text-field"]).toBe("Ruin");
+      expect(label?.layout?.["text-font"]).toEqual(["Noto Sans Regular"]);
+      expect(JSON.stringify(label?.filter)).toBe(ruinedFilter);
+    }
+  });
+
+  it("draws structures with the shore, under every aid and hazard", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = [...TILE_LAYERS];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const order = layerOrder(map);
+    const position = (layerId: string): number => {
+      const index = order.indexOf(layerId);
+      expect(index, `${layerId} was not added`).toBeGreaterThanOrEqual(0);
+      return index;
+    };
+    // A pier is built on the shore, so it draws over the land and the coastline.
+    for (const geometry of ["chart-land-area-0", "chart-coastline-0"]) {
+      expect(position(geometry)).toBeLessThan(position("chart-shoreline-structure-fill-0"));
+      expect(position(geometry)).toBeLessThan(position("chart-mooring-fill-0"));
+    }
+    // Aids and hazards keep their collision priority over the ruin labels.
+    for (const aid of ["chart-buoy-symbol-0", "chart-danger-symbol-0"]) {
+      for (const label of ["chart-shoreline-structure-ruin-label-0", "chart-mooring-ruin-label-0"]) {
+        expect(position(aid)).toBeLessThan(position(label));
+      }
+    }
+    // A structure is geometry, so it is drawn beneath the aids over it.
+    for (const structure of ["chart-shoreline-structure-point-0", "chart-mooring-point-0"]) {
+      expect(position(structure)).toBeLessThan(position("chart-buoy-symbol-0"));
+    }
+  });
+
   it("produces layer specifications MapLibre accepts", () => {
     const map = {
       addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
@@ -543,9 +696,37 @@ describe("package chart layers", () => {
 /** A layer as the test reads it back, without narrowing the MapLibre union. */
 type StyleLayer = {
   id: string;
+  type?: string;
+  minzoom?: number;
+  "source-layer"?: string;
+  filter?: unknown;
   paint?: Record<string, unknown>;
   layout?: Record<string, unknown>;
 };
+
+/** Every layer the style was given, by id. */
+function styleLayers(map: MapLibreMap): Map<string, StyleLayer> {
+  return new Map(vi.mocked(map.addLayer).mock.calls
+    .map(([layer]) => [layer.id, layer as unknown as StyleLayer]));
+}
+
+/**
+ * One paint property as MapLibre would evaluate it for a feature at a zoom.
+ * Comparing the expressions themselves would only show that two styles differ in
+ * text; evaluating them shows that a pier and a rip rap really draw differently.
+ */
+function paint(
+  layer: StyleLayer | undefined,
+  property: string,
+  properties: Record<string, unknown>,
+  zoom = 16,
+): unknown {
+  const value = layer?.paint?.[property];
+  expect(value, `${layer?.id ?? "layer"} has no ${property}`).toBeDefined();
+  const expression = createExpression(value, `${layer?.id ?? ""}.paint.${property}`);
+  if (expression.result === "error") throw new Error(expression.value.join(", "));
+  return expression.value.evaluate({ zoom }, { type: "Polygon", properties });
+}
 
 /** A map double that records what the style would be given. */
 function chartMap(): MapLibreMap {

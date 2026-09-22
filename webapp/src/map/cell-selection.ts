@@ -1,5 +1,27 @@
 import type { Bounds, ChartCell } from "../chart-package";
 
+/**
+ * The extent to open a package on. A package's own bounds describe everything
+ * it holds, which includes whole overview cells: selecting cells by region
+ * keeps a band-2 cell intact, and a western Lake Superior package whose bounds
+ * reach Milwaukee's latitude would open on empty water at the wrong scale.
+ * The detailed coverage is what a package exists for, so the coarsest band is
+ * dropped whenever a finer one is present.
+ */
+export function initialChartBounds(cells: readonly ChartCell[], packageBounds: Bounds): Bounds {
+  const bands = [...new Set(cells.map((cell) => cell.usageBand))];
+  if (cells.length === 0 || bands.length < 2) return packageBounds;
+  const coarsest = Math.min(...bands);
+  const detailed = cells.filter((cell) => cell.usageBand !== coarsest);
+  if (detailed.length === 0) return packageBounds;
+  return [
+    Math.min(...detailed.map((cell) => cell.bounds[0])),
+    Math.min(...detailed.map((cell) => cell.bounds[1])),
+    Math.max(...detailed.map((cell) => cell.bounds[2])),
+    Math.max(...detailed.map((cell) => cell.bounds[3])),
+  ];
+}
+
 export function selectChartCells(
   cells: readonly ChartCell[],
   viewport: Bounds,

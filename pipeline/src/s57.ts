@@ -7,13 +7,14 @@ import { type Command, type CommandRunner, runCommand } from "./process.js";
 const REQUIRED_LAYERS = [
   "COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN", "BUAARE", "SEAARE",
   "BOYLAT", "BOYCAR", "BOYSPP", "BOYSAW", "BOYISD", "WRECKS", "OBSTRN", "UWTROC", "HRBFAC",
-  "ACHARE", "CBLARE", "RESARE", "PIPARE", "CBLSUB", "PIPSOL",
+  "ACHARE", "CBLARE", "RESARE", "PIPARE", "CBLSUB", "PIPSOL", "SLCONS", "PONTON", "FLODOC",
+  "MORFAC",
 ] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
 const LAYER_NAMES = [
   "coverage", "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
   "water-label", "buoy", "danger", "harbour-facility", "anchorage", "restricted-area",
-  "restricted-area-edge", "cable",
+  "restricted-area-edge", "cable", "shoreline-structure", "mooring",
 ] as const;
 
 /**
@@ -109,6 +110,8 @@ interface SourceVariant {
   readonly kind: string;
   /** The S-57 attribute holding the category code list, where the class defines one. */
   readonly category?: string;
+  /** The S-57 attribute holding the water level code list, where the class defines one. */
+  readonly waterLevel?: string;
 }
 
 const LABEL_KINDS: Readonly<Record<string, string>> = { LNDARE: "land", LNDRGN: "land", BUAARE: "settlement" };
@@ -137,6 +140,14 @@ const RESTRICTED_AREA_VARIANTS: Readonly<Record<string, SourceVariant>> = {
 const CABLE_VARIANTS: Readonly<Record<string, SourceVariant>> = {
   CBLSUB: { kind: "cable", category: "CATCBL" },
   PIPSOL: { kind: "pipeline", category: "CATPIP" },
+};
+
+// S-57 gives CATSLC and WATLEV to SLCONS alone; PONTON and FLODOC carry neither,
+// and naming an attribute a class does not define fails the whole union.
+const SHORELINE_STRUCTURE_VARIANTS: Readonly<Record<string, SourceVariant>> = {
+  SLCONS: { kind: "construction", category: "CATSLC", waterLevel: "WATLEV" },
+  PONTON: { kind: "pontoon" },
+  FLODOC: { kind: "floating-dock" },
 };
 
 export const EXTRACTS: readonly ExtractSpec[] = [
@@ -243,6 +254,22 @@ export const EXTRACTS: readonly ExtractSpec[] = [
     properties: [],
     dialect: "SQLITE",
     buildSql: cableSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["SLCONS", "PONTON", "FLODOC"],
+    outputLayer: "shoreline-structure",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: shorelineStructureSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["MORFAC"],
+    outputLayer: "mooring",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: mooringSql,
     mayBeEmpty: true,
   },
 ];
@@ -387,6 +414,11 @@ function variantFor(
 /** A class without a category attribute still has to project the column the union expects. */
 function categoryColumn(variant: SourceVariant): string {
   return variant.category === undefined ? "NULL AS category" : codeList(variant.category, "category");
+}
+
+/** As with the category: a class that does not define WATLEV projects the column as NULL. */
+function waterLevelColumn(variant: SourceVariant): string {
+  return variant.waterLevel === undefined ? "NULL AS waterLevel" : codeList(variant.waterLevel, "waterLevel");
 }
 
 /**
@@ -591,6 +623,42 @@ function cableSql(sources: readonly InspectedLayer[], constants: readonly string
       "geometry",
     ];
   });
+}
+
+/**
+ * SLCONS, PONTON and FLODOC carry point, line and area primitives and the
+ * geometry is kept as charted: a pier is an area in one cell and a line in
+ * another, so the webapp separates them with a geometry-type filter rather
+ * than the pipeline forcing one shape.
+ */
+function shorelineStructureSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("shoreline-structure", sources, (source) => {
+    const variant = variantFor(SHORELINE_STRUCTURE_VARIANTS, source, "shoreline-structure");
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      categoryColumn(variant),
+      codeList("CONDTN", "condition"),
+      waterLevelColumn(variant),
+      ...constants,
+      "geometry",
+    ];
+  });
+}
+
+/**
+ * MORFAC is the one class behind this layer, so it needs no kind to tell its
+ * sources apart, and its primitives are kept as charted like the structures'.
+ */
+function mooringSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("mooring", sources, () => [
+    "OBJNAM AS name",
+    codeList("CATMOR", "category"),
+    codeList("CONDTN", "condition"),
+    codeList("WATLEV", "waterLevel"),
+    ...constants,
+    "geometry",
+  ]);
 }
 
 /** Fails early and by name when GDAL lacks the SpatiaLite functions labels need. */

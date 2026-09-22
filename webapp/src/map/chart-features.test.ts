@@ -6,7 +6,9 @@ import {
   formatDangerDetails,
   formatFeatureDetailsList,
   formatHarbourFacilityDetails,
+  formatMooringDetails,
   formatRestrictedAreaDetails,
+  formatShorelineStructureDetails,
 } from "./chart-features";
 
 describe("buoy details", () => {
@@ -128,6 +130,56 @@ describe("area and facility details", () => {
       .toBe("Submarine cable\nCategory: power line");
     expect(formatCableDetails({ kind: "pipeline", name: "Outfall", category: "2" }))
       .toBe("Outfall\nSubmarine pipeline\nCategory: outfall pipe");
+  });
+});
+
+describe("shoreline structure details", () => {
+  it("leads with the condition, because a ruined pier is not a berth", () => {
+    expect(formatShorelineStructureDetails({
+      name: "Raspberry Island Dock",
+      kind: "construction",
+      category: "4",
+      condition: "2",
+      waterLevel: "2",
+    })).toBe([
+      "Raspberry Island Dock",
+      "Shoreline structure",
+      "Condition: ruined",
+      "Category: pier ( jetty)",
+      "Water level: always dry",
+    ].join("\n"));
+  });
+
+  it("names armouring as what it is", () => {
+    expect(formatShorelineStructureDetails({ kind: "construction", category: "8" }))
+      .toBe("Shoreline structure\nCategory: rip rap");
+    expect(formatShorelineStructureDetails({ kind: "construction", category: "10" }))
+      .toBe("Shoreline structure\nCategory: sea wall");
+  });
+
+  it("never describes a floating dry dock as a berth", () => {
+    // `FLODOC` is a shipyard structure. A pontoon is the floating dock a vessel
+    // does lie against, so the two must not share a heading.
+    const floatingDock = formatShorelineStructureDetails({ kind: "floating-dock" });
+    expect(floatingDock).toBe("Floating dry dock");
+    expect(floatingDock).not.toContain("Pontoon");
+    expect(formatShorelineStructureDetails({ kind: "pontoon", waterLevel: "1" }))
+      .toBe("Pontoon\nWater level: partly submerged at high water");
+  });
+
+  it("reads no category on a class S-57 gives none", () => {
+    // `CATSLC` belongs to `SLCONS` alone, so a code arriving on a pontoon or a
+    // floating dock is not a shoreline construction category and is not shown.
+    expect(formatShorelineStructureDetails({ kind: "pontoon", category: "4" })).toBe("Pontoon");
+    expect(formatShorelineStructureDetails({ kind: "floating-dock", category: "4" }))
+      .toBe("Floating dry dock");
+  });
+
+  it("names a mooring facility and its category", () => {
+    expect(formatMooringDetails({ category: "1" }))
+      .toBe("Mooring facility\nCategory: dolphin");
+    expect(formatMooringDetails({ name: "Pile mooring", category: "5", condition: "2" }))
+      .toBe("Pile mooring\nMooring facility\nCondition: ruined\nCategory: post or pile");
   });
 });
 

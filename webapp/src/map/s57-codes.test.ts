@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { createExpression } from "@maplibre/maplibre-gl-style-spec";
 import {
+  CONDITION_RUINED,
   describeS57Code,
   describeS57CodeList,
   parseS57CodeList,
   s57AttributeLabel,
+  s57CodeListIncludes,
+  s57CodeListIncludesExpression,
   s57Meaning,
 } from "./s57-codes";
 
@@ -50,6 +54,59 @@ describe("S-57 code meanings", () => {
     expect(describeS57CodeList("RESTRN", null)).toBeUndefined();
     expect(describeS57CodeList("RESTRN", "")).toBeUndefined();
     expect(describeS57CodeList("RESTRN", " , ")).toBeUndefined();
+  });
+
+  it("reads the shoreline, mooring and condition tables GDAL publishes", () => {
+    expect(describeS57Code("CATSLC", "1")).toBe("breakwater");
+    expect(describeS57Code("CATSLC", "4")).toBe("pier ( jetty)");
+    expect(describeS57Code("CATSLC", "8")).toBe("rip rap");
+    expect(describeS57Code("CATSLC", "10")).toBe("sea wall");
+    expect(describeS57Code("CATSLC", "16")).toBe("open face wharf");
+    expect(describeS57Code("CATMOR", "1")).toBe("dolphin");
+    expect(describeS57Code("CATMOR", "3")).toBe("bollard");
+    expect(describeS57Code("CATMOR", "7")).toBe("mooring buoy");
+    expect(describeS57Code("CONDTN", CONDITION_RUINED)).toBe("ruined");
+    expect(describeS57Code("CONDTN", "1")).toBe("under construction");
+  });
+
+  it("shows a bare code for a shoreline, mooring or condition code with no entry", () => {
+    // `CATSLC` stops at 16, `CATMOR` at 7 and `CONDTN` at 5. A dock whose
+    // category is outside the table must not be named after a nearby one.
+    expect(describeS57Code("CATSLC", "17")).toBe("shoreline construction 17");
+    expect(describeS57Code("CATMOR", "9")).toBe("mooring facility 9");
+    expect(describeS57Code("CONDTN", "7")).toBe("condition 7");
+    expect(s57Meaning("CATSLC", "17")).toBeUndefined();
+    expect(s57Meaning("CATMOR", "9")).toBeUndefined();
+    expect(s57Meaning("CONDTN", "7")).toBeUndefined();
+    expect(s57AttributeLabel("CATSLC")).toBe("shoreline construction");
+    expect(s57AttributeLabel("CONDTN")).toBe("condition");
+  });
+
+  it("finds one code in a list, in TypeScript and in a style expression alike", () => {
+    expect(s57CodeListIncludes("2", CONDITION_RUINED)).toBe(true);
+    expect(s57CodeListIncludes("1,2", CONDITION_RUINED)).toBe(true);
+    expect(s57CodeListIncludes("1", CONDITION_RUINED)).toBe(false);
+    expect(s57CodeListIncludes(undefined, CONDITION_RUINED)).toBe(false);
+
+    const ruined = (condition?: string): unknown => {
+      const expression = createExpression(
+        s57CodeListIncludesExpression("condition", CONDITION_RUINED),
+        "test",
+      );
+      if (expression.result === "error") throw new Error(expression.value.join(", "));
+      return expression.value.evaluate({ zoom: 16 }, {
+        type: "Polygon",
+        properties: condition === undefined ? {} : { condition },
+      });
+    };
+    expect(ruined("2")).toBe(true);
+    // A code sharing the property with another still matches, and a code that
+    // merely contains the digit does not.
+    expect(ruined("1,2")).toBe(true);
+    expect(ruined("2,1")).toBe(true);
+    expect(ruined("12")).toBe(false);
+    expect(ruined("1")).toBe(false);
+    expect(ruined()).toBe(false);
   });
 
   it("parses the comma-separated form the pipeline writes", () => {

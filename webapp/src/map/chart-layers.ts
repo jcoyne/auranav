@@ -37,9 +37,12 @@ import {
   formatDangerDetails,
   formatFeatureDetailsList,
   formatHarbourFacilityDetails,
+  formatMooringDetails,
   formatRestrictedAreaDetails,
+  formatShorelineStructureDetails,
   type ChartFeatureProperties,
 } from "./chart-features";
+import { CONDITION_RUINED, s57CodeListIncludesExpression } from "./s57-codes";
 
 export const DEMO_SOURCE_IDS = {
   coastline: "demo-coastline",
@@ -79,9 +82,52 @@ const HARBOUR_MIN_ZOOM = 11;
 const DANGER_LABEL_MIN_ZOOM = 12;
 const BUOY_LABEL_MIN_ZOOM = 13;
 
+/** A pier is small, but where it is at all is worth knowing before it is legible. */
+const STRUCTURE_MIN_ZOOM = 11;
+/** Armouring is coastline detail, so it waits for the zoom that details the coast. */
+const ARMOURING_MIN_ZOOM = 13;
+const MOORING_MIN_ZOOM = 12;
+const RUIN_LABEL_MIN_ZOOM = 14;
+
 const CHART_FONT = ["Noto Sans Regular"];
 const LABEL_HALO = "#f5fbfc";
 const TRANSPARENT = "rgba(0, 0, 0, 0)";
+
+/** Built structure: the tan of land, greyed so a pier reads as built, not natural. */
+const STRUCTURE_FILL = "#ddcda4";
+/** The coastline's own ink, so a pier reads as an extension of the shore. */
+const STRUCTURE_INK = "#282716";
+const ARMOURING_FILL = "#d5cfbe";
+const ARMOURING_INK = "#9a9280";
+const ARMOURING_OPACITY = 0.65;
+/**
+ * A ruin is grey and never the ink of a structure that can be used. Tying to a
+ * ruined logging-era dock is the failure this distinction exists to prevent, so
+ * it carries colour, a dashed edge and a label rather than any one of the three.
+ */
+const RUIN_FILL = "#c3bdb1";
+const RUIN_INK = "#6f6a5c";
+const RUIN_LABEL_COLOR = "#8a4a12";
+const RUIN_DASHES: [number, number] = [2, 2];
+
+/**
+ * `SLCONS` is not homogeneous, and about 40% of it is shoreline armouring: rip
+ * rap (`CATSLC` 8), revetment (9) and sea wall (10). That is coastline detail
+ * rather than a structure to tie to, and drawn like a pier it buries the piers.
+ */
+const ARMOURING_CATEGORIES = ["8", "9", "10"];
+
+const SHORELINE_STRUCTURE_PEER_PREFIX = "chart-shoreline-structure-";
+const MOORING_PEER_PREFIX = "chart-mooring-";
+
+/**
+ * These layers carry point, line and area primitives together: the same pier is
+ * an area in one cell and a line in another. Each primitive gets its own layer,
+ * because a fill cannot draw a line and a line cannot draw a point.
+ */
+const POINT_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "Point"];
+const LINE_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "LineString"];
+const POLYGON_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "Polygon"];
 
 export function addPackageChartLayers(
   map: MapLibreMap,
@@ -231,7 +277,7 @@ type ChartLayerSpecification = Parameters<MapLibreMap["addLayer"]>[0];
  * collision against a later one. The phases below are therefore ordered bottom
  * up for geometry and by collision priority for symbols:
  *
- * 1. geometry, from the sea bed up to the coastline;
+ * 1. geometry, from the sea bed up to the coastline and what is built on it;
  * 2. transparent touch targets, which draw nothing;
  * 3. symbols. Buoys and dangers come first because an aid or a hazard outranks
  *    every label; then sounding and light labels; then the names of aids, areas
@@ -264,6 +310,10 @@ function addVectorLayers(
   phase("cable", addCableLineLayer);
   phase("land-area", addLandAreaLayer);
   phase("coastline", addCoastlineLayer);
+  // A pier is a physical structure laid over the water and the shore, so it
+  // belongs with land and coastline and beneath every aid and hazard.
+  phase("shoreline-structure", addShorelineStructureLayers);
+  phase("mooring", addMooringLayers);
   phase("harbour-facility", addHarbourFacilityMarkerLayer);
 
   phase("sounding", addSoundingHitLayer);
@@ -272,6 +322,8 @@ function addVectorLayers(
   phase("danger", addDangerHitLayer);
   phase("harbour-facility", addHarbourFacilityHitLayer);
   phase("cable", addCableHitLayer);
+  phase("shoreline-structure", addShorelineStructureHitLayers);
+  phase("mooring", addMooringHitLayers);
 
   phase("buoy", addBuoySymbolLayer);
   phase("danger", addDangerSymbolLayer);
@@ -281,6 +333,9 @@ function addVectorLayers(
   phase("light", addLightLabelLayer);
   phase("buoy", addBuoyLabelLayer);
   phase("danger", addDangerLabelLayer);
+  // A ruin outranks a place name: it is the reason not to tie up here.
+  phase("shoreline-structure", addShorelineStructureRuinLabelLayer);
+  phase("mooring", addMooringRuinLabelLayer);
   phase("harbour-facility", addHarbourFacilityLabelLayer);
   phase("anchorage", addAnchorageLabelLayer);
   phase("restricted-area", addRestrictedAreaLabelLayer);
@@ -357,6 +412,204 @@ function addCoastlineLayer(context: LayerContext): string[] {
     "source-layer": "coastline",
     paint: { "line-color": "#282716", "line-width": 3 },
   })];
+}
+
+/** Whether a shoreline structure is armouring rather than something to tie to. */
+function isArmouring(): ExpressionSpecification {
+  return ["match", ["to-string", ["get", "category"]], ARMOURING_CATEGORIES, true, false];
+}
+
+function isRuined(): ExpressionSpecification {
+  return s57CodeListIncludesExpression("condition", CONDITION_RUINED);
+}
+
+/** Picks one value for armouring and another for a structure that can be used. */
+function byArmouring(armouring: string | number, structure: string | number): ExpressionSpecification {
+  return ["case", isArmouring(), armouring, structure];
+}
+
+/** Picks one value for a ruin, and otherwise defers to the armouring split. */
+function byCondition(
+  ruined: string | number,
+  armouring: string | number,
+  structure: string | number,
+): ExpressionSpecification {
+  return ["case", isRuined(), ruined, byArmouring(armouring, structure)];
+}
+
+/**
+ * Holds armouring back to its own minimum zoom inside a shared layer.
+ *
+ * A zoom expression has to be the outermost one, so the fade is a `step` over
+ * zoom whose two branches are the per-feature values rather than a `case` with a
+ * zoom expression buried in one arm, which MapLibre rejects.
+ */
+function armouringOpacity(opacity: number): ExpressionSpecification {
+  return [
+    "step", ["zoom"],
+    byArmouring(0, 1),
+    ARMOURING_MIN_ZOOM, byArmouring(opacity, 1),
+  ];
+}
+
+/**
+ * Docks, piers, breakwaters and the shoreline armouring charted alongside them.
+ *
+ * Berthing structures — pier, wharf, breakwater, mole, ramp, slipway, pontoon —
+ * are drawn solid in the ink of the coastline, so a dock reads as built land a
+ * vessel can lie against. Armouring is subdued and appears only once the coast
+ * is drawn in detail, because it is not a structure to tie to and drawn alike it
+ * would bury the 4,599 piers among 3,671 features of rip rap and sea wall.
+ *
+ * A ruined structure is greyed, edged with dashes and labelled. The floating dry
+ * dock case is carried by the popup, which never calls it a berth.
+ */
+function addShorelineStructureLayers(context: LayerContext): string[] {
+  // The fill is also the area touch target, as on an anchorage. Below the
+  // armouring zoom an armouring area still answers a tap, which names it
+  // honestly; it is only the drawing that is held back.
+  const fillLayerId = addLayer(context, {
+    id: `chart-shoreline-structure-fill-${context.index}`,
+    type: "fill",
+    source: context.sourceId,
+    "source-layer": "shoreline-structure",
+    minzoom: STRUCTURE_MIN_ZOOM,
+    filter: POLYGON_ONLY,
+    paint: {
+      "fill-color": byCondition(RUIN_FILL, ARMOURING_FILL, STRUCTURE_FILL),
+      "fill-opacity": armouringOpacity(ARMOURING_OPACITY),
+    },
+  });
+  addFeatureInteraction(
+    context,
+    fillLayerId,
+    SHORELINE_STRUCTURE_PEER_PREFIX,
+    AREA_FEATURE,
+    formatShorelineStructureDetails,
+  );
+  return [
+    fillLayerId,
+    addLayer(context, {
+      id: `chart-shoreline-structure-edge-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "shoreline-structure",
+      minzoom: STRUCTURE_MIN_ZOOM,
+      filter: ["all", POLYGON_ONLY, ["!", isRuined()]],
+      paint: {
+        "line-color": byArmouring(ARMOURING_INK, STRUCTURE_INK),
+        "line-width": byArmouring(0.8, 1.2),
+        "line-opacity": armouringOpacity(1),
+      },
+    }),
+    // `line-dasharray` takes no per-feature value in MapLibre, so a ruin needs a
+    // layer of its own to be drawn broken rather than solid.
+    addLayer(context, {
+      id: `chart-shoreline-structure-ruin-edge-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "shoreline-structure",
+      minzoom: STRUCTURE_MIN_ZOOM,
+      filter: ["all", POLYGON_ONLY, isRuined()],
+      paint: { "line-color": RUIN_INK, "line-width": 1.2, "line-dasharray": RUIN_DASHES },
+    }),
+    addLayer(context, {
+      id: `chart-shoreline-structure-line-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "shoreline-structure",
+      minzoom: STRUCTURE_MIN_ZOOM,
+      filter: ["all", LINE_ONLY, ["!", isRuined()]],
+      paint: {
+        // Where the structure is charted as a line, the line is the structure
+        // itself and carries its full weight, not an outline's.
+        "line-color": byArmouring(ARMOURING_INK, STRUCTURE_INK),
+        "line-width": byArmouring(1, 2.4),
+        "line-opacity": armouringOpacity(1),
+      },
+    }),
+    addLayer(context, {
+      id: `chart-shoreline-structure-ruin-line-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "shoreline-structure",
+      minzoom: STRUCTURE_MIN_ZOOM,
+      filter: ["all", LINE_ONLY, isRuined()],
+      paint: { "line-color": RUIN_INK, "line-width": 1.8, "line-dasharray": RUIN_DASHES },
+    }),
+    addLayer(context, {
+      id: `chart-shoreline-structure-point-${context.index}`,
+      type: "circle",
+      source: context.sourceId,
+      "source-layer": "shoreline-structure",
+      minzoom: STRUCTURE_MIN_ZOOM,
+      filter: POINT_ONLY,
+      paint: {
+        "circle-radius": 3.2,
+        // A ruin is hollow: light inside a grey edge, against the solid dark
+        // mark of a structure that is still there.
+        "circle-color": byCondition(RUIN_FILL, ARMOURING_FILL, STRUCTURE_INK),
+        "circle-stroke-color": byCondition(RUIN_INK, ARMOURING_INK, LABEL_HALO),
+        "circle-stroke-width": 1.2,
+      },
+    }),
+  ];
+}
+
+/**
+ * The dolphins, bollards, pile moorings and mooring buoys of `MORFAC`: small
+ * marks, drawn alike whatever their `CATMOR` category, which the popup names.
+ * Inventing a symbol per category here would be portrayal this app does not do.
+ */
+function addMooringLayers(context: LayerContext): string[] {
+  const fillLayerId = addLayer(context, {
+    id: `chart-mooring-fill-${context.index}`,
+    type: "fill",
+    source: context.sourceId,
+    "source-layer": "mooring",
+    minzoom: MOORING_MIN_ZOOM,
+    filter: POLYGON_ONLY,
+    paint: {
+      "fill-color": ["case", isRuined(), RUIN_FILL, STRUCTURE_FILL],
+      "fill-opacity": 0.9,
+    },
+  });
+  addFeatureInteraction(context, fillLayerId, MOORING_PEER_PREFIX, AREA_FEATURE, formatMooringDetails);
+  return [
+    fillLayerId,
+    addLayer(context, {
+      id: `chart-mooring-line-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "mooring",
+      minzoom: MOORING_MIN_ZOOM,
+      filter: ["all", LINE_ONLY, ["!", isRuined()]],
+      paint: { "line-color": STRUCTURE_INK, "line-width": 1.6 },
+    }),
+    addLayer(context, {
+      id: `chart-mooring-ruin-line-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "mooring",
+      minzoom: MOORING_MIN_ZOOM,
+      filter: ["all", LINE_ONLY, isRuined()],
+      paint: { "line-color": RUIN_INK, "line-width": 1.4, "line-dasharray": RUIN_DASHES },
+    }),
+    addLayer(context, {
+      id: `chart-mooring-point-${context.index}`,
+      type: "circle",
+      source: context.sourceId,
+      "source-layer": "mooring",
+      minzoom: MOORING_MIN_ZOOM,
+      filter: POINT_ONLY,
+      paint: {
+        "circle-radius": 3,
+        "circle-color": ["case", isRuined(), RUIN_FILL, STRUCTURE_INK],
+        "circle-stroke-color": ["case", isRuined(), RUIN_INK, LABEL_HALO],
+        "circle-stroke-width": 1.2,
+      },
+    }),
+  ];
 }
 
 /**
@@ -575,6 +828,105 @@ function addCableHitLayer(context: LayerContext): string[] {
   });
   addFeatureInteraction(context, layerId, "chart-cable-hit-", LINE_FEATURE, formatCableDetails);
   return [layerId];
+}
+
+/**
+ * Touch targets for the line and point primitives of a structure layer. The area
+ * primitive is answered by its own fill, which is already the size of the tap.
+ *
+ * All three share one peer prefix, so a pier charted as an area in one cell and
+ * as a line in another yields a single popup, and the most specific primitive
+ * under the tap is the one that wins.
+ */
+function addStructureHitLayers(
+  context: LayerContext,
+  sourceLayer: "shoreline-structure" | "mooring",
+  peerPrefix: string,
+  minzoom: number,
+  format: (properties: ChartFeatureProperties) => string,
+): string[] {
+  const lineLayerId = addLayer(context, {
+    id: `${peerPrefix}hit-line-${context.index}`,
+    type: "line",
+    source: context.sourceId,
+    "source-layer": sourceLayer,
+    minzoom,
+    filter: LINE_ONLY,
+    paint: { "line-color": TRANSPARENT, "line-width": 16 },
+  });
+  addFeatureInteraction(context, lineLayerId, peerPrefix, LINE_FEATURE, format);
+  const pointLayerId = addLayer(context, {
+    id: `${peerPrefix}hit-point-${context.index}`,
+    type: "circle",
+    source: context.sourceId,
+    "source-layer": sourceLayer,
+    minzoom,
+    filter: POINT_ONLY,
+    paint: { "circle-color": TRANSPARENT, "circle-radius": 16 },
+  });
+  addFeatureInteraction(context, pointLayerId, peerPrefix, POINT_FEATURE, format);
+  return [lineLayerId, pointLayerId];
+}
+
+function addShorelineStructureHitLayers(context: LayerContext): string[] {
+  return addStructureHitLayers(
+    context,
+    "shoreline-structure",
+    SHORELINE_STRUCTURE_PEER_PREFIX,
+    STRUCTURE_MIN_ZOOM,
+    formatShorelineStructureDetails,
+  );
+}
+
+function addMooringHitLayers(context: LayerContext): string[] {
+  return addStructureHitLayers(
+    context,
+    "mooring",
+    MOORING_PEER_PREFIX,
+    MOORING_MIN_ZOOM,
+    formatMooringDetails,
+  );
+}
+
+/**
+ * Names a ruin on the chart itself. `CONDTN` 2 is the dock ruin the Apostle
+ * Islands are full of, and a mariner must not have to open a popup to find out
+ * that the pier ahead is one. The word is placed over the feature whatever its
+ * primitive, so one layer covers all three.
+ */
+function addRuinLabelLayer(
+  context: LayerContext,
+  sourceLayer: "shoreline-structure" | "mooring",
+  peerPrefix: string,
+): string[] {
+  return [addLayer(context, {
+    id: `${peerPrefix}ruin-label-${context.index}`,
+    type: "symbol",
+    source: context.sourceId,
+    "source-layer": sourceLayer,
+    minzoom: RUIN_LABEL_MIN_ZOOM,
+    filter: isRuined(),
+    layout: {
+      "text-field": "Ruin",
+      "text-font": CHART_FONT,
+      "text-size": 10,
+      "text-allow-overlap": false,
+      "text-padding": 3,
+    },
+    paint: {
+      "text-color": RUIN_LABEL_COLOR,
+      "text-halo-color": LABEL_HALO,
+      "text-halo-width": 1.5,
+    },
+  })];
+}
+
+function addShorelineStructureRuinLabelLayer(context: LayerContext): string[] {
+  return addRuinLabelLayer(context, "shoreline-structure", SHORELINE_STRUCTURE_PEER_PREFIX);
+}
+
+function addMooringRuinLabelLayer(context: LayerContext): string[] {
+  return addRuinLabelLayer(context, "mooring", MOORING_PEER_PREFIX);
 }
 
 /**

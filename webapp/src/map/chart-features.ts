@@ -44,6 +44,20 @@ const CABLE_HEADINGS: Readonly<Record<string, string>> = {
   pipeline: "Submarine pipeline",
 };
 
+/**
+ * A `FLODOC` is a floating dry dock: a shipyard structure that is not a berth,
+ * and must not be described as one. It gets a heading of its own rather than
+ * sharing the pontoon's, which is the floating dock a vessel does lie against.
+ */
+const SHORELINE_STRUCTURE_HEADINGS: Readonly<Record<string, string>> = {
+  construction: "Shoreline structure",
+  pontoon: "Pontoon",
+  "floating-dock": "Floating dry dock",
+};
+
+/** `CATSLC` belongs to `SLCONS`; S-57 gives no category to the other two classes. */
+const CATEGORISED_STRUCTURE_KINDS = ["construction"];
+
 const ANCHORING_HEADINGS: Readonly<Record<string, string>> = {
   prohibited: "Anchoring prohibited",
   restricted: "Anchoring restricted",
@@ -127,6 +141,39 @@ export function formatCableDetails(properties: ChartFeatureProperties): string {
     text(properties.name) ?? heading,
     text(properties.name) === undefined ? undefined : heading,
     labelled("Category", describeS57CodeList(categoryAttribute, properties.category)),
+  ]);
+}
+
+/**
+ * A dock, pier, breakwater or shoreline revetment.
+ *
+ * The condition leads the attributes because code 2 is `ruined`, and the
+ * Apostle Islands carry plenty of logging-era dock ruins: a mariner reading this
+ * popup to decide whether to tie up has to meet that first.
+ */
+export function formatShorelineStructureDetails(properties: ChartFeatureProperties): string {
+  const kind = text(properties.kind);
+  const heading = (kind === undefined ? undefined : SHORELINE_STRUCTURE_HEADINGS[kind])
+    ?? "Shoreline structure";
+  return lines([
+    text(properties.name) ?? heading,
+    text(properties.name) === undefined ? undefined : heading,
+    labelled("Condition", describeS57CodeList("CONDTN", properties.condition)),
+    kind !== undefined && !CATEGORISED_STRUCTURE_KINDS.includes(kind)
+      ? undefined
+      : labelled("Category", describeS57CodeList("CATSLC", properties.category)),
+    labelled("Water level", describeS57CodeList("WATLEV", properties.waterLevel)),
+  ]);
+}
+
+/** A dolphin, bollard, pile mooring or mooring buoy. */
+export function formatMooringDetails(properties: ChartFeatureProperties): string {
+  return lines([
+    text(properties.name) ?? "Mooring facility",
+    text(properties.name) === undefined ? undefined : "Mooring facility",
+    labelled("Condition", describeS57CodeList("CONDTN", properties.condition)),
+    labelled("Category", describeS57CodeList("CATMOR", properties.category)),
+    labelled("Water level", describeS57CodeList("WATLEV", properties.waterLevel)),
   ]);
 }
 
