@@ -40,7 +40,9 @@ describe("range and bearing readout", () => {
     expect(container.hidden).toBe(false);
     expect(container.textContent).toContain("23.0 NM");
     expect(container.textContent).toContain("182°");
-    expect(container.textContent).toContain("Current fix");
+    // No "current fix" badge: the location banner beneath already reports fix age.
+    expect(container.textContent).not.toContain("Current fix");
+    expect(container.querySelector(".range-bearing-fix-state")).toBeNull();
     expect(container.classList.contains("is-warning")).toBe(false);
     expect(container.classList.contains("is-stale")).toBe(false);
     expect(container.querySelector(".range-bearing-notice")).toBeNull();
@@ -117,8 +119,8 @@ describe("range and bearing readout", () => {
 
     expect(container.classList.contains("is-stale")).toBe(false);
     expect(container.classList.contains("is-warning")).toBe(false);
-    expect(container.textContent).toContain("Current fix");
     expect(container.textContent).not.toContain("Stale fix");
+    expect(container.querySelector(".range-bearing-fix-state")).toBeNull();
   });
 
   it("recomputes the range as the fix moves", () => {

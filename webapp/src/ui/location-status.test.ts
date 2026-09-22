@@ -46,7 +46,7 @@ describe("location status", () => {
     renderPositionStatus(container, fix, "following", fix.timestamp + 5_000);
 
     expect(container.textContent).toContain("43.12346° N, 87.98765° W");
-    expect(container.textContent).toContain("Accuracy ±12 m");
+    expect(container.textContent).toContain("±12 m");
     expect(container.textContent).toContain("Fix ");
     expect(container.textContent).toContain("Current fix");
     expect(container.textContent).toContain("Following");
@@ -102,7 +102,7 @@ describe("location status", () => {
     });
 
     expect(container.textContent).toContain("43.12346° N, 87.98765° W");
-    expect(container.textContent).toContain("Accuracy ±12 m");
+    expect(container.textContent).toContain("±12 m");
     expect(container.textContent).toContain("Stale fix");
     expect(container.textContent).toContain("A GPS position is currently unavailable.");
     expect(container.classList.contains("is-warning")).toBe(true);

@@ -37,8 +37,9 @@ export function renderPositionStatus(
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
   });
+  // The ± is what makes this an accuracy figure; the word adds nothing.
   const accuracy = Number.isFinite(position.coords.accuracy)
-    ? `Accuracy ±${Math.round(Math.max(0, position.coords.accuracy))} m`
+    ? `±${Math.round(Math.max(0, position.coords.accuracy))} m`
     : "Accuracy unavailable";
   const fixTime = new Date(position.timestamp);
   const timestamp = Number.isNaN(fixTime.valueOf())

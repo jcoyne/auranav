@@ -69,11 +69,17 @@ export function renderRangeBearing(container: HTMLElement, options: RangeBearing
   details.textContent = `${formatRange(rangeNauticalMiles(from, mark))} · ${formatBearing(trueBearingDegrees(from, mark))}`;
   details.title = `Mark ${formatLatLng(mark)}`;
 
-  state.classList.add(stale ? "is-stale" : "is-current");
-  state.textContent = stale ? "Stale fix" : "Current fix";
+  // A current fix needs no badge: the location banner beneath already reports
+  // fix age, and repeating it here only competes with the range itself. A stale
+  // fix still says so, because that one changes what the numbers mean.
+  if (!stale) {
+    container.append(label, details);
+    return;
+  }
 
+  state.classList.add("is-stale");
+  state.textContent = "Stale fix";
   container.append(label, details, state);
-  if (!stale) return;
 
   container.classList.add("is-warning", "is-stale");
   container.append(noticeElement(options.notice ?? STALE_NOTICE));
