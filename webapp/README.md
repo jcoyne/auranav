@@ -26,6 +26,23 @@ Packages may also advertise a `light` point layer. At chart zooms the viewer ren
 
 Chart labels use two locally packaged Noto Sans Regular glyph ranges, so labels and light symbols do not require a font server. Their source and SIL Open Font License are recorded in `public/fonts/`.
 
+## Range and bearing mark
+
+Press and hold the chart for half a second — or right-click on a desktop — to drop a single range
+and bearing mark. The readout in the bottom-left corner gives the great-circle range in nautical
+miles and the initial bearing from the current GPS fix, and it is recomputed on every fix. There is
+one mark at a time; a new press moves it, and tapping the mark opens a popup whose **Remove mark**
+button clears it. The mark is not saved and a reload discards it.
+
+**Bearings are true**, not magnetic. The app is true-north referenced and the preprocessing pipeline
+does not extract the ENC magnetic variation (`MAGVAR`), so no magnetic bearing is offered rather
+than an approximated one. Range and bearing are computed on a sphere, which is adequate for the
+distances this readout is used over but is not a geodesic solution.
+
+With a mark placed and no usable fix, the readout says that range and bearing are unavailable and
+why; a reading taken from a stale fix is labelled as coming from a stale fix rather than shown as
+current. A press that drifts more than a few pixels is treated as a pan and drops no mark.
+
 ## Offline packages
 
 Production builds register a service worker that caches the application shell, local glyphs, and install metadata. Open **Charts** in the header and choose **Download charts** to copy the manifest, NOAA user agreement, and every PMTiles archive into the browser's Origin Private File System (OPFS). Each archive is downloaded completely, checked against its reported content length when available, and opened as PMTiles before the package is activated. The viewer then reads PMTiles byte ranges directly from OPFS; it does not depend on which map areas were viewed while online.
@@ -53,7 +70,11 @@ Or run the corresponding workspace commands from the repository root.
 ## Structure
 
 - `src/chart-package.ts` validates the schema-v1 fields consumed by the viewer.
-- `src/map/` creates the MapLibre map, PMTiles or preview chart layers, and GPS accuracy/position layers.
+- `src/map/` creates the MapLibre map, PMTiles or preview chart layers, GPS accuracy/position
+  layers, and the user's range and bearing mark. `popup-dispatcher.ts` owns the single map-level
+  click handler that every tappable layer registers with, so overlapping features open one popup
+  for the most specific hit instead of stacking; `range-bearing.ts` holds the geodesy as pure
+  functions and `long-press.ts` the press gesture.
 - `src/gps/` owns the browser geolocation watch and translates browser errors into explicit application states.
 - `src/controls/` provides accessible directional pan, zoom, and location-follow buttons, plus a
   compass that points to north under rotation. The pan and zoom buttons are off by default, since

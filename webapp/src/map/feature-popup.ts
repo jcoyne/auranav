@@ -8,14 +8,35 @@ import type { ChartFeatureProperties } from "./chart-features";
 export const POINT_FEATURE = 0;
 export const LINE_FEATURE = 1;
 export const AREA_FEATURE = 2;
+/**
+ * A mark the user placed outranks everything charted under it. They put it
+ * there on purpose and are aiming at it; the chart was already there.
+ */
+export const USER_MARK_FEATURE = -1;
 
-export type ChartInteraction = {
+type InteractionTarget = {
   readonly layerId: string;
   /** Layers of this kind across overlapping cells, whose hits merge into one popup. */
   readonly peerPrefix: string;
   readonly precedence: number;
-  readonly format: (properties: ChartFeatureProperties) => string;
 };
+
+/**
+ * What the popup shows. Charted features describe themselves as text, one line
+ * per feature. A user mark needs controls the reader can operate, so it builds
+ * an element instead, which the dispatcher mounts with `setDOMContent`.
+ */
+type InteractionContent =
+  | {
+    readonly format: (properties: ChartFeatureProperties) => string;
+    readonly render?: undefined;
+  }
+  | {
+    readonly render: (properties: readonly ChartFeatureProperties[]) => HTMLElement;
+    readonly format?: undefined;
+  };
+
+export type ChartInteraction = InteractionTarget & InteractionContent;
 
 /** A rendered feature, narrowed to what choosing between them needs. */
 export type QueriedFeature = {

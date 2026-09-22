@@ -1,3 +1,5 @@
+import { formatLatLng } from "../map/range-bearing";
+
 export const POSITION_STALE_AFTER_MS = 30_000;
 
 export type FollowState = "following" | "paused";
@@ -31,8 +33,10 @@ export function renderPositionStatus(
   options: PositionStatusOptions = {},
 ): void {
   const stale = options.forceStale === true || isPositionStale(position, now);
-  const latitude = formatCoordinate(position.coords.latitude, "N", "S");
-  const longitude = formatCoordinate(position.coords.longitude, "E", "W");
+  const coordinates = formatLatLng({
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  });
   const accuracy = Number.isFinite(position.coords.accuracy)
     ? `Accuracy ±${Math.round(Math.max(0, position.coords.accuracy))} m`
     : "Accuracy unavailable";
@@ -44,7 +48,7 @@ export function renderPositionStatus(
   container.replaceChildren();
   const details = document.createElement("span");
   details.className = "location-details";
-  details.textContent = `${latitude}, ${longitude} · ${accuracy} · ${timestamp}`;
+  details.textContent = `${coordinates} · ${accuracy} · ${timestamp}`;
   if (!Number.isNaN(fixTime.valueOf())) details.title = fixTime.toISOString();
 
   const state = document.createElement("span");
@@ -76,9 +80,4 @@ export function renderLocationMessage(
   container.classList.toggle("is-warning", warning);
   container.classList.remove("is-stale");
   container.hidden = message.length === 0;
-}
-
-function formatCoordinate(value: number, positive: string, negative: string): string {
-  const direction = value < 0 ? negative : positive;
-  return `${Math.abs(value).toFixed(5)}° ${direction}`;
 }

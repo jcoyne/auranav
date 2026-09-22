@@ -77,6 +77,12 @@ Acceptance: a repeatable command transforms a pinned fixture or downloaded cell 
 - [x] Draw a restricted area's outline from `restricted-area-edge`, whose cell-boundary cut edges the
       pipeline removes, so an area two cells share reads as one polygon.
 - [x] Show chart source, edition/update date, depth units, and vertical datum.
+- [x] Show lighthouse structures (`LNDMRK`) as well as their lights, keeping the structure's
+      height distinct from the light's focal plane elevation.
+- [x] Answer a tap with one popup, for the feature most specifically tapped, rather than one
+      popup per layer under it.
+- [x] Outline a restricted area only where it restricts a vessel; an area carrying a category
+      alone is labelled but not outlined, its boundary being easily read as a depth contour.
 
 Acceptance: the map remains interactive on desktop and a touch viewport, does not render duplicate overlapping cells, and communicates scale and data age.
 
@@ -91,6 +97,8 @@ choices should be expected to need a pass. The M6 test matrix is where portrayal
 - [x] Display position, accuracy circle, timestamp, and stale-fix state.
 - [x] Handle unsupported, denied, unavailable, and timed-out location states.
 - [x] Record a GPS track: sample every 15 s to capped localStorage polylines, draw it in yellow, and toggle or clear it from the drawer.
+- [x] Drop a range-and-bearing mark by long press, showing range in nautical miles and true
+      bearing from the current fix, refreshed on every GPS read, and removable from its popup.
 
 Acceptance: automated tests cover each location state; the geolocation watch runs while follow mode or track recording needs it and is released once neither does; turning off the track stops sampling and hides the line; a location failure stops recording visibly instead of logging nothing.
 
@@ -116,6 +124,7 @@ Acceptance: the full package passes schema and integrity checks, update dates ar
 
 - [ ] Review portrayal on a real display: symbol legibility, chart colours, and label density where
       contours, soundings, lights, buoys, dangers, landforms, settlements and waters compete.
+- [ ] Test the long-press range-and-bearing mark on real iOS and Android hardware.
 - [ ] Test keyboard and touch accessibility, daylight contrast, and reduced-motion behavior.
 - [ ] Measure startup, pan/zoom, tile size, battery use, and storage consumption on representative mobile hardware.
 - [ ] Add prominent informational-use wording and NOAA attribution/user-agreement access.
@@ -132,6 +141,12 @@ Acceptance: the documented test matrix passes on the agreed browsers/devices and
   are drawn from the finest visible band only, because coarser fallback cells name the same islands.
 - Browser storage quotas and iOS offline lifecycle behavior may constrain chart-package size.
 - Charted depth uses a stated sounding datum and is not current water depth.
+- Range and bearing are spherical, not geodesic: about 0.3% from WGS-84 over these distances.
+  The bearing is true, never magnetic. `MAGVAR` is in the exchange set but is not extracted, so
+  offering magnetic bearing would need a pipeline change, not a display conversion.
+- The long-press gesture is unit-tested only. Whether iOS Safari raises its own callout over the
+  canvas first, and whether Android Chrome's synthesised `contextmenu` lands after our handler,
+  both need a real device.
 - A feature spanning several cells is labelled once per cell, because a label anchor is computed
   within one cell. Trimming the cut edges makes such an area *look* like one polygon, so its repeated
   label is now the visible seam. Merging would need a package-level layer, which the per-cell tile

@@ -251,6 +251,83 @@ button { font: inherit; }
   text-align: center;
 }
 
+/*
+ * The range and bearing readout for the user's own mark. Bottom left, clear of
+ * the map controls above it and of the attribution in the opposite corner.
+ */
+.range-bearing-status {
+  position: absolute;
+  z-index: 2;
+  bottom: max(0.8rem, env(safe-area-inset-bottom));
+  left: max(0.8rem, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  max-width: min(22rem, calc(100% - 1.6rem));
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgb(9 42 59 / 25%);
+  border-radius: 0.55rem;
+  color: #092a3b;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 2px 9px rgb(0 27 38 / 18%);
+  font-size: 0.8rem;
+}
+
+.range-bearing-status.is-warning { color: #541e14; background: #fff1dc; }
+.range-bearing-status.is-stale { border-color: #805a18; background: rgb(255 247 226 / 96%); }
+
+.range-bearing-label {
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  /* The mark's own magenta, so the readout and the symbol read as one thing. */
+  color: #fff;
+  background: #c2158f;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.range-bearing-details { font-weight: 750; font-variant-numeric: tabular-nums; }
+.range-bearing-reference { color: #40555e; font-size: 0.7rem; }
+
+.range-bearing-fix-state {
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.range-bearing-fix-state.is-current { color: #fff; background: #087fcb; }
+.range-bearing-fix-state.is-stale { color: #fff; background: #805a18; }
+.range-bearing-fix-state.is-missing { color: #fff; background: #8d2f1c; }
+.range-bearing-notice { flex-basis: 100%; font-weight: 650; }
+
+.mark-popup {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+  font-size: 0.82rem;
+}
+
+.mark-popup-coordinates { color: #40555e; font-variant-numeric: tabular-nums; }
+
+.mark-popup-remove {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #8d2f1c;
+  border-radius: 0.35rem;
+  color: #fff;
+  background: #a8371f;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mark-popup-remove:hover { background: #8d2f1c; }
+.mark-popup-remove:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
+
 .drawer-scrim {
   position: absolute;
   z-index: 4;
@@ -441,6 +518,11 @@ button { font: inherit; }
     max-width: calc(100% - 8rem);
   }
   .north-indicator { top: 0.75rem; }
+  .range-bearing-status {
+    /* Stacks above the location banner, which moves to the bottom here. */
+    bottom: calc(max(0.6rem, env(safe-area-inset-bottom)) + 5.4rem);
+    max-width: calc(100% - 1.6rem);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

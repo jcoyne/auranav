@@ -1,7 +1,7 @@
 import type { ChartPackageManifest, DepthUnit, TileLayer } from "../chart-package";
 import { resolvePackageAssetUrl } from "../chart-package-url";
-import type { ExpressionSpecification, Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
-import { addProtocol, Popup } from "maplibre-gl";
+import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
+import { addProtocol } from "maplibre-gl";
 import { PMTiles, Protocol } from "pmtiles";
 import { createChartSource } from "../offline/chart-store";
 import {
@@ -12,13 +12,8 @@ import {
 } from "./demo-chart";
 import { POSITION_ACCURACY_LAYER_ID, POSITION_FIX_LAYER_ID } from "./position-layer";
 import { landLabelFilter } from "./land";
-import {
-  AREA_FEATURE,
-  type ChartInteraction,
-  chooseInteraction,
-  LINE_FEATURE,
-  POINT_FEATURE,
-} from "./feature-popup";
+import { AREA_FEATURE, LINE_FEATURE, POINT_FEATURE } from "./feature-popup";
+import { createPopupDispatcher, type PopupDispatcher } from "./popup-dispatcher";
 import { depthConversionFactor, depthUnitLabel, formatDepthInUnit } from "./depth";
 import { formatLightDetails } from "./light";
 import { addLightFlareImages, lightFlareIconExpression } from "./light-icon";
@@ -37,7 +32,6 @@ import {
   formatBuoyDetails,
   formatCableDetails,
   formatDangerDetails,
-  formatFeatureDetailsList,
   formatHarbourFacilityDetails,
   formatLandmarkDetails,
   formatMooringDetails,
@@ -164,6 +158,12 @@ export function addPackageChartLayers(
   map: MapLibreMap,
   manifest: ChartPackageManifest,
   manifestUrl: URL,
+  /**
+   * The application's popup dispatcher. Charts register into the caller's
+   * dispatcher so a user mark registered into the same one can outrank them;
+   * a caller with nothing else to register may leave it out.
+   */
+  dispatcher: PopupDispatcher = createPopupDispatcher(map),
 ): {
   showCells(cellNames: readonly string[]): void;
   coverageCellNamesAtCenter(): string[] | undefined;
@@ -171,10 +171,6 @@ export function addPackageChartLayers(
   registerPmtilesProtocol();
   const added = new Map<number, string[]>();
   const usageBands = new Map(manifest.cells.map((cell) => [cell.name, cell.usageBand]));
-  // One handler for every chart layer, so overlapping features yield a single
-  // popup for whichever feature the tap was most specifically on.
-  const interactions: ChartInteraction[] = [];
-  addPopupDispatcher(map, interactions);
   let visibleCellNames = new Set<string>();
 
   return {
@@ -219,7 +215,7 @@ export function addPackageChartLayers(
           index,
           tileSet.layers,
           manifest.depth.displayUnit,
-          interactions,
+          dispatcher,
           beforeId,
         );
         added.set(index, layerIds);
@@ -294,8 +290,8 @@ type LayerContext = {
   readonly index: number;
   readonly displayUnit: DepthUnit;
   readonly beforeId: string | undefined;
-  /** Collected as layers are added, then read by the one click handler. */
-  readonly interactions: ChartInteraction[];
+  /** Every tappable layer registers here, and one handler answers for them all. */
+  readonly dispatcher: PopupDispatcher;
 };
 
 type ChartLayerSpecification = Parameters<MapLibreMap["addLayer"]>[0];
@@ -320,10 +316,10 @@ function addVectorLayers(
   index: number,
   layers: TileLayer[],
   displayUnit: DepthUnit,
-  interactions: ChartInteraction[],
+  dispatcher: PopupDispatcher,
   beforeId?: string,
 ): string[] {
-  const context: LayerContext = { map, sourceId, index, displayUnit, beforeId, interactions };
+  const context: LayerContext = { map, sourceId, index, displayUnit, beforeId, dispatcher };
   const layerIds: string[] = [];
   const phase = (
     sourceLayer: TileLayer,
@@ -1573,7 +1569,10 @@ export function contourLabelExpression(unit: DepthUnit): ExpressionSpecification
     : ["to-string", ["round", converted]];
 }
 
-export function addDemoChartLayers(map: MapLibreMap): void {
+export function addDemoChartLayers(
+  map: MapLibreMap,
+  dispatcher: PopupDispatcher = createPopupDispatcher(map),
+): void {
   map.addSource(DEMO_SOURCE_IDS.depthArea, { type: "geojson", data: demoDepthAreas });
   map.addLayer({
     id: "depth-area-fill",
@@ -1625,15 +1624,15 @@ export function addDemoChartLayers(map: MapLibreMap): void {
   map.on("mouseleave", "sounding-point", () => {
     map.getCanvas().style.cursor = "";
   });
-  map.on("click", "sounding-point", (event: MapLayerMouseEvent) => {
-    const feature = event.features?.[0];
-    const depth = feature?.properties?.depth;
-    if (typeof depth !== "number") return;
-
-    new Popup({ closeButton: true, focusAfterOpen: true })
-      .setLngLat(event.lngLat)
-      .setText(`${depth.toFixed(1)} metres`)
-      .addTo(map);
+  // Through the shared dispatcher, so a user mark dropped on a demo sounding
+  // opens one popup rather than stacking the mark's menu behind the sounding's.
+  dispatcher.register({
+    layerId: "sounding-point",
+    peerPrefix: "sounding-point",
+    precedence: POINT_FEATURE,
+    format: (properties) => (
+      typeof properties.depth === "number" ? `${properties.depth.toFixed(1)} metres` : ""
+    ),
   });
 }
 
@@ -1644,8 +1643,8 @@ function formatSoundingDetails(properties: ChartFeatureProperties, displayUnit: 
 }
 
 /**
- * Registers a layer as tappable. The popup is opened by the single handler in
- * `addPopupDispatcher`, so a tap landing on a sounding inside a restricted area
+ * Registers a layer as tappable. The popup is opened by the single handler the
+ * dispatcher owns, so a tap landing on a sounding inside a restricted area
  * describes the sounding instead of stacking two popups over each other.
  */
 function addFeatureInteraction(
@@ -1662,18 +1661,5 @@ function addFeatureInteraction(
   map.on("mouseleave", layerId, () => {
     map.getCanvas().style.cursor = "";
   });
-  context.interactions.push({ layerId, peerPrefix, precedence, format });
-}
-
-function addPopupDispatcher(map: MapLibreMap, interactions: readonly ChartInteraction[]): void {
-  map.on("click", (event: MapLayerMouseEvent) => {
-    const chosen = chooseInteraction(map.queryRenderedFeatures(event.point), interactions);
-    if (chosen === undefined) return;
-    const details = formatFeatureDetailsList(chosen.properties, chosen.interaction.format);
-    if (details === "") return;
-    new Popup({ closeButton: true, focusAfterOpen: true })
-      .setLngLat(event.lngLat)
-      .setText(details)
-      .addTo(map);
-  });
+  context.dispatcher.register({ layerId, peerPrefix, precedence, format });
 }

@@ -3,7 +3,7 @@ import type { LayerSpecification, Map as MapLibreMap } from "maplibre-gl";
 import { createExpression, validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { ChartPackageManifest } from "../chart-package";
 import { TILE_LAYERS } from "../chart-package";
-import { addPackageChartLayers, contourLabelExpression } from "./chart-layers";
+import { addDemoChartLayers, addPackageChartLayers, contourLabelExpression } from "./chart-layers";
 import { landLabelFilter } from "./land";
 import { ANCHORING_PROHIBITED_PATTERN_ID, landmarkImageId } from "./chart-symbols";
 import { LIGHT_FLARE_PIXEL_RATIO, lightFlareIconExpression } from "./light-icon";
@@ -908,7 +908,7 @@ describe("package chart layers", () => {
     });
     expect(errors.map((error) => `${error.line ?? ""} ${error.message}`)).toEqual([]);
   });
-});
+
 
 /** A layer as the test reads it back, without narrowing the MapLibre union. */
 type StyleLayer = {
@@ -990,6 +990,24 @@ function chartMap(): MapLibreMap {
 function layerOrder(map: MapLibreMap): string[] {
   return vi.mocked(map.addLayer).mock.calls.map(([layer]) => layer.id);
 }
+
+  it("routes the demo sounding through the shared dispatcher, not its own popup", () => {
+    const map = chartMap();
+    const registered: string[] = [];
+    const dispatcher = {
+      register: (interaction: { layerId: string }) => registered.push(interaction.layerId),
+      closePopup: vi.fn(),
+    };
+
+    addDemoChartLayers(map, dispatcher);
+
+    // Demo mode must not reintroduce the stacked-popup bug: a user mark dropped
+    // on a demo sounding has to resolve to one popup, which only the shared
+    // dispatcher can decide.
+    expect(registered).toEqual(["sounding-point"]);
+    expect(map.on).not.toHaveBeenCalledWith("click", "sounding-point", expect.any(Function));
+  });
+});
 
 function manifest(): ChartPackageManifest {
   const commonCell = {
