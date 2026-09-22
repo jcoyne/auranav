@@ -157,7 +157,14 @@ area reads as the single polygon it is. An area that never reaches the cell edge
 
 A display must draw restricted-area outlines from this layer, not from the `restricted-area` polygon.
 
-- `name`, `kind`, `anchoring`: as on `restricted-area`
+An outline is drawn only for an area that carries a `restriction`. An area described by `category`
+alone is a designation rather than a rule binding on a vessel — the Apostle Islands National
+Lakeshore is `CATREA` 23 with no `RESTRN` — and its boundary is a long line easily misread as a
+depth contour. Those areas are labelled and left unoutlined. The label carries the meaning; the
+outline is reserved for a restriction that changes what a vessel may do.
+
+- `name`, `kind`, `restriction`, `anchoring`: as on `restricted-area`. `restriction` is carried
+  because the outline is drawn only where it is present.
 - `cell`, `usageBand`, `compilationScale`
 
 ## `cable`
@@ -204,6 +211,31 @@ buoys a vessel makes fast to.
 - `waterLevel`: code list from `WATLEV`
 - there is no `kind`: `MORFAC` is the only source class, so there is nothing to disambiguate
 - `cell`, `usageBand`, `compilationScale`
+
+## `landmark`
+
+Point and area features from `LNDMRK`: the towers, masts, chimneys and spires a mariner takes a
+bearing on. The lighthouse structures are here, not in `light`.
+
+- `name`: `OBJNAM` when named
+- `category`: code list from `CATLMK`. 17 is a tower.
+- `function`: code list from `FUNCTN`, so it may hold several codes. 33 is "light support" — the
+  structure carrying a charted light. It is the only reliable test for one: a light support is not
+  always `CATLMK` 17, and is charted as a chimney or a dome in some cells.
+- `heightMetres`: `HEIGHT`, the height of the structure, when present. Most landmarks have none.
+  S-57 measures it above ground, and `LNDMRK` carries no vertical datum to say otherwise.
+- `conspicuous`: `CONVIS`, single-valued. 1 where the landmark is visually conspicuous.
+- `cell`, `usageBand`, `compilationScale`
+
+Two constraints a display must respect:
+
+`landmark.heightMetres` is the height of the structure. `light.heightMetres` is the elevation of the
+light's focal plane. They are different measurements of the same lighthouse and must never be
+labelled alike or substituted for one another.
+
+A light support is co-located with a `light` feature, because a lighthouse is charted as a tower
+plus a light. The two must be drawn so that neither suppresses the other, and one lighthouse must
+not read as two separate aids.
 
 ## S-57 code meanings
 

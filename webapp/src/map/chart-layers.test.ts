@@ -5,7 +5,7 @@ import type { ChartPackageManifest } from "../chart-package";
 import { TILE_LAYERS } from "../chart-package";
 import { addPackageChartLayers, contourLabelExpression } from "./chart-layers";
 import { landLabelFilter } from "./land";
-import { ANCHORING_PROHIBITED_PATTERN_ID } from "./chart-symbols";
+import { ANCHORING_PROHIBITED_PATTERN_ID, landmarkImageId } from "./chart-symbols";
 import { LIGHT_FLARE_PIXEL_RATIO, lightFlareIconExpression } from "./light-icon";
 
 describe("package chart layers", () => {
@@ -669,6 +669,223 @@ describe("package chart layers", () => {
     }
   });
 
+  it("draws landmarks from both primitives, keyed off function and not category", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["landmark"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    // `LNDMRK` is charted as points and as areas — US5MKEDC and US5WI34A carry
+    // polygons — so a fill cannot be left to draw a point, nor a circle an area.
+    const expected: Readonly<Record<string, readonly [string, string, readonly string[]]>> = {
+      "chart-landmark-fill-0": ["landmark", "fill", ["Polygon"]],
+      "chart-landmark-edge-0": ["landmark", "line", ["Polygon"]],
+      "chart-landmark-hit-0": ["landmark", "circle", ["Point"]],
+      "chart-landmark-symbol-0": ["landmark", "symbol", ["Point", "Polygon"]],
+      "chart-landmark-label-0": ["landmark", "symbol", ["Point", "Polygon"]],
+    };
+    for (const [layerId, [sourceLayer, type, geometryTypes]] of Object.entries(expected)) {
+      const layer = layers.get(layerId);
+      expect(layer, `${layerId} was not added`).toBeDefined();
+      expect(layer?.["source-layer"]).toBe(sourceLayer);
+      expect(layer?.type).toBe(type);
+      for (const geometryType of ["Point", "LineString", "Polygon"] as const) {
+        expect(matches(layer, geometryType, {}), `${layerId} on ${geometryType}`)
+          .toBe(geometryTypes.includes(geometryType));
+      }
+    }
+
+    // Every landmark outline is registered, and the mark is picked by FUNCTN 33
+    // first: NOAA charts light supports whose CATLMK is a chimney or a dome, so
+    // keying the lighthouse off category 17 would miss real ones.
+    for (const shape of ["tower", "mast", "chimney", "spire", "dome", "mark", "light-support"]) {
+      expect(map.addImage).toHaveBeenCalledWith(
+        landmarkImageId(shape as Parameters<typeof landmarkImageId>[0]),
+        expect.objectContaining({ data: expect.any(Uint8Array) }),
+        expect.objectContaining({ pixelRatio: expect.any(Number) }),
+      );
+    }
+    const symbol = layers.get("chart-landmark-symbol-0");
+    const icon = (properties: Record<string, unknown>): unknown =>
+      layout(symbol, "icon-image", properties);
+    expect(icon({ category: "17", function: "33" })).toBe(landmarkImageId("light-support"));
+    expect(icon({ category: "3", function: "30,33" })).toBe(landmarkImageId("light-support"));
+    expect(icon({ category: "15", function: "33" })).toBe(landmarkImageId("light-support"));
+    // Not every landmark is a lighthouse: 40 masts, 17 chimneys, 7 spires and
+    // 4 domes in this region take the structure their category names.
+    expect(icon({ category: "17" })).toBe(landmarkImageId("tower"));
+    expect(icon({ category: "7", function: "31" })).toBe(landmarkImageId("mast"));
+    expect(icon({ category: "3" })).toBe(landmarkImageId("chimney"));
+    expect(icon({ category: "20" })).toBe(landmarkImageId("spire"));
+    expect(icon({ category: "15" })).toBe(landmarkImageId("dome"));
+    // A cairn, a monument or an undocumented category claims no shape at all.
+    expect(icon({ category: "9" })).toBe(landmarkImageId("mark"));
+    expect(icon({ category: "21" })).toBe(landmarkImageId("mark"));
+    expect(icon({})).toBe(landmarkImageId("mark"));
+
+    // The lighthouse structure is inked in the magenta of the light's own
+    // label, so the tower, the flare and the label read as one object.
+    const label = layers.get("chart-landmark-label-0");
+    const edge = layers.get("chart-landmark-edge-0");
+    const lightSupport = { function: "33" };
+    const ordinary = { function: "31" };
+    expect(paint(label, "text-color", lightSupport)).toBe("#b00078");
+    expect(paint(label, "text-color", lightSupport))
+      .not.toEqual(paint(label, "text-color", ordinary));
+    expect(paint(edge, "line-color", lightSupport))
+      .not.toEqual(paint(edge, "line-color", ordinary));
+
+    // One map-level click handler still answers for all of them.
+    for (const layerId of Object.keys(expected)) {
+      expect(map.on).not.toHaveBeenCalledWith("click", layerId, expect.any(Function));
+    }
+    expect(map.on).toHaveBeenCalledWith("mouseenter", "chart-landmark-hit-0", expect.any(Function));
+  });
+
+  it("gives a landmark you can take a bearing on more weight than an ordinary one", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["landmark"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    const symbol = layers.get("chart-landmark-symbol-0");
+    const label = layers.get("chart-landmark-label-0");
+    const conspicuous = { category: "17", conspicuous: 1 };
+    const ordinary = { category: "7", conspicuous: 2 };
+    const unstated = { category: "7" };
+
+    // CONVIS 1 is a mark a mariner can take a bearing on, so it is drawn larger
+    // and named larger. CONVIS 2, and an absent CONVIS, are not.
+    expect(layout(symbol, "icon-size", conspicuous))
+      .toBeGreaterThan(layout(symbol, "icon-size", ordinary) as number);
+    expect(layout(symbol, "icon-size", unstated)).toEqual(layout(symbol, "icon-size", ordinary));
+    expect(layout(label, "text-size", conspicuous))
+      .toBeGreaterThan(layout(label, "text-size", ordinary) as number);
+    expect(paint(label, "text-color", conspicuous))
+      .not.toEqual(paint(label, "text-color", ordinary));
+
+    // And it appears earlier: the region holds 161 landmarks, most of them
+    // masts and chimneys, and drawing those from the same zoom buries the
+    // lighthouses among them. A light support counts as a bearing mark too,
+    // whether or not the cell called it conspicuous.
+    for (const [properties, drawnEarly] of [
+      [conspicuous, true],
+      [{ category: "17", function: "30,33" }, true],
+      [ordinary, false],
+      [unstated, false],
+    ] as const) {
+      expect(paint(symbol, "icon-opacity", properties, 11)).toBe(drawnEarly ? 1 : 0);
+      expect(paint(symbol, "icon-opacity", properties, 14)).toBe(1);
+      expect(paint(label, "text-opacity", properties, 12)).toBe(drawnEarly ? 1 : 0);
+      expect(paint(label, "text-opacity", properties, 14)).toBe(1);
+    }
+    expect(symbol?.minzoom).toBe(10);
+  });
+
+  it("composes a lighthouse tower with its light flare instead of stacking two aids", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = [...TILE_LAYERS];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    const tower = layers.get("chart-landmark-symbol-0");
+    const flare = layers.get("chart-light-symbol-0");
+    // A lighthouse's LIGHTS point and its LNDMRK point are at the identical
+    // coordinate, so the two marks cannot be separated by collision priority.
+    // They are composed: the flare's tip is anchored on the charted position
+    // and sweeps up and right, and the tower stands on that same position.
+    expect(flare?.layout?.["icon-anchor"]).toBe("bottom-left");
+    expect(tower?.layout?.["icon-anchor"]).toBe("bottom");
+
+    // Neither may suppress the other. The flare allows overlap and ignores
+    // placement, so nothing can drop it and it blocks nothing; the tower allows
+    // overlap so the flare cannot drop it either. The tower does not ignore
+    // placement, so it still outranks the labels placed after it.
+    expect(flare?.layout?.["icon-allow-overlap"]).toBe(true);
+    expect(flare?.layout?.["icon-ignore-placement"]).toBe(true);
+    expect(tower?.layout?.["icon-allow-overlap"]).toBe(true);
+    expect(tower?.layout?.["icon-ignore-placement"]).toBeUndefined();
+
+    const order = layerOrder(map);
+    const position = (layerId: string): number => {
+      const index = order.indexOf(layerId);
+      expect(index, `${layerId} was not added`).toBeGreaterThanOrEqual(0);
+      return index;
+    };
+    // The tower is drawn after the flare, so its silhouette survives whole
+    // where the two overlap at their shared origin.
+    expect(position("chart-light-symbol-0")).toBeLessThan(position("chart-landmark-symbol-0"));
+    // Aids and hazards still outrank the landmark mark, and the landmark mark
+    // still outranks every label, its own included.
+    for (const aid of ["chart-buoy-symbol-0", "chart-danger-symbol-0", "chart-light-symbol-0"]) {
+      expect(position(aid)).toBeLessThan(position("chart-landmark-symbol-0"));
+    }
+    for (const label of [
+      "chart-depth-contour-label-0", "chart-sounding-label-0", "chart-light-label-0",
+      "chart-buoy-label-0", "chart-danger-label-0", "chart-landmark-label-0",
+      "chart-harbour-facility-label-0", "chart-anchorage-label-0",
+      "chart-restricted-area-label-0", "chart-water-label-0", "chart-land-label-0",
+    ]) {
+      expect(position("chart-landmark-symbol-0")).toBeLessThan(position(label));
+    }
+    // A landmark footprint is built ground: it draws with the shore, under aids.
+    expect(position("chart-coastline-0")).toBeLessThan(position("chart-landmark-fill-0"));
+    expect(position("chart-landmark-fill-0")).toBeLessThan(position("chart-buoy-symbol-0"));
+  });
+
+  it("outlines a restricted area only where a restriction applies to a vessel", () => {
+    const map = chartMap();
+    const chartManifest = manifest();
+    chartManifest.tileSets[0]!.layers = ["restricted-area", "restricted-area-edge"];
+
+    addPackageChartLayers(map, chartManifest, new URL("https://example.test/charts/manifest.json"))
+      .showCells(["US4AAAAA"]);
+
+    const layers = styleLayers(map);
+    const edge = layers.get("chart-restricted-area-edge-0");
+    // The cable areas, the Wisconsin Shipwreck Coast sanctuary and a security
+    // zone all carry a RESTRN, and keep their outline.
+    for (const restriction of ["2,6,24", "22,2,10", "8"]) {
+      expect(matches(edge, "LineString", { restriction }), restriction).toBe(true);
+    }
+    // The Apostle Islands National Lakeshore is CATREA 23 with no RESTRN at
+    // all. Its boundary is a long line that reads as a depth contour, so it is
+    // labelled and left unoutlined. An empty string is absent too: a vector
+    // tile omits a missing property, but a producer may write one instead.
+    expect(matches(edge, "LineString", { category: "23" })).toBe(false);
+    expect(matches(edge, "LineString", { restriction: "" })).toBe(false);
+    expect(matches(edge, "LineString", {})).toBe(false);
+    // Not on `anchoring`, which is derived from RESTRN 1 and 2 alone: the
+    // security zone has neither and must keep its line.
+    expect(matches(edge, "LineString", { restriction: "8" })).toBe(true);
+
+    // Outlines that do draw keep the three-way anchoring distinction.
+    const distinct = (value: unknown): number => new Set([
+      ["prohibited", "1"], ["restricted", "2"], [undefined, "8"],
+    ].map(([anchoring]) => {
+      const expression = createExpression(value, "edge");
+      if (expression.result === "error") throw new Error(expression.value.join(", "));
+      return expression.value.evaluate({ zoom: 12 }, {
+        type: "LineString",
+        properties: anchoring === undefined ? {} : { anchoring },
+      });
+    })).size;
+    expect(distinct(edge?.paint?.["line-color"])).toBe(3);
+    expect(distinct(edge?.paint?.["line-width"])).toBe(3);
+
+    // Every restricted area keeps its label, the Lakeshore included.
+    expect(layers.get("chart-restricted-area-label-0")?.filter).toBeUndefined();
+  });
+
   it("produces layer specifications MapLibre accepts", () => {
     const map = {
       addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(), moveLayer: vi.fn(),
@@ -726,6 +943,37 @@ function paint(
   const expression = createExpression(value, `${layer?.id ?? ""}.paint.${property}`);
   if (expression.result === "error") throw new Error(expression.value.join(", "));
   return expression.value.evaluate({ zoom }, { type: "Polygon", properties });
+}
+
+/** One layout property as MapLibre would evaluate it for a feature at a zoom. */
+function layout(
+  layer: StyleLayer | undefined,
+  property: string,
+  properties: Record<string, unknown>,
+  zoom = 16,
+): unknown {
+  const value = layer?.layout?.[property];
+  expect(value, `${layer?.id ?? "layer"} has no ${property}`).toBeDefined();
+  const expression = createExpression(value, `${layer?.id ?? ""}.layout.${property}`);
+  if (expression.result === "error") throw new Error(expression.value.join(", "));
+  return expression.value.evaluate({ zoom }, { type: "Point", properties });
+}
+
+/** The geometry types a chart source layer can carry. */
+type GeometryType = "Point" | "LineString" | "Polygon";
+
+/** Whether a layer's filter admits a feature of the given geometry type. */
+function matches(
+  layer: StyleLayer | undefined,
+  geometryType: GeometryType,
+  properties: Record<string, unknown>,
+  zoom = 16,
+): boolean {
+  const filter = layer?.filter;
+  if (filter === undefined) return true;
+  const expression = createExpression(filter, `${layer?.id ?? ""}.filter`);
+  if (expression.result === "error") throw new Error(expression.value.join(", "));
+  return expression.value.evaluate({ zoom }, { type: geometryType, properties }) === true;
 }
 
 /** A map double that records what the style would be given. */

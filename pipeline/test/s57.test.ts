@@ -363,8 +363,10 @@ describe("S-57 commands", () => {
     expect(sql).toContain("(SELECT ST_Union(geometry) AS extent FROM M_COVR WHERE CATCOV = 1) cover");
     expect(sql).toContain("WHERE geometry IS NOT NULL");
     expect(sql.split(" UNION ALL ")).toHaveLength(3);
-    // The outline needs only what styles it; restriction and category stay on the polygon.
-    expect(sql).not.toContain("AS restriction");
+    // The outline carries what styles it: `anchoring` for its colour, and
+    // `restriction` because an area with none is labelled but not outlined.
+    expect(sql).toContain(`${codeList("RESTRN")} AS restriction`);
+    expect(sql).not.toContain("AS category");
     expect(sql.match(/AS anchoring/g)).toHaveLength(3);
   });
 
@@ -417,11 +419,34 @@ describe("S-57 commands", () => {
     expect(sql).not.toContain("ST_PointOnSurface");
   });
 
+  it("carries a landmark's category, function, height and conspicuousness", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("landmark", ["LNDMRK"]), parsed, bounds, false));
+
+    // LNDMRK is the only class behind the layer, so it needs no kind column.
+    // CATLMK and FUNCTN are S-57 lists; HEIGHT and CONVIS are single-valued.
+    expect(sql).toBe(
+      `SELECT OBJNAM AS name, ${codeList("CATLMK")} AS category, `
+      + `${codeList("FUNCTN")} AS function, `
+      + "HEIGHT AS heightMetres, CONVIS AS conspicuous, "
+      + "'US4WI1DP' AS cell, 4 AS usageBand, 90000 AS compilationScale, geometry FROM LNDMRK",
+    );
+    expect(sql).not.toContain("AS kind");
+  });
+
+  it("keeps both LNDMRK primitives, because an area landmark is a structure with extent", () => {
+    const parsed = parseMetadata(metadata(), summaries()).cell;
+    const sql = sqlOf(extractionCommand(baseCell, "layers.gpkg", extractSpec("landmark", ["LNDMRK"]), parsed, bounds, false));
+
+    expect(sql).not.toContain("ST_PointOnSurface");
+    expect(sql).not.toContain("OGR_GEOMETRY");
+  });
+
   it("marks every layer beyond the base chart as optional, since no cell holds them all", () => {
     const optional = EXTRACTS.filter((extract) => extract.mayBeEmpty === true).map((extract) => extract.outputLayer);
     expect(optional).toEqual([
       "land-area", "land-label", "water-label", "buoy", "danger", "harbour-facility", "anchorage",
-      "restricted-area", "restricted-area-edge", "cable", "shoreline-structure", "mooring",
+      "restricted-area", "restricted-area-edge", "cable", "shoreline-structure", "mooring", "landmark",
     ]);
   });
 
@@ -506,6 +531,27 @@ describe("parseMetadata", () => {
     expect(() => parseMetadata(metadata({ DSPM_CSCL: undefined }), summaries())).toThrow("DSPM_CSCL");
     expect(() => parseMetadata(metadata({ DSPM_DUNI: 2 }), summaries())).toThrow("schema v1 requires metres");
     expect(() => parseMetadata(metadata({ DSPM_HUNI: 2 }), summaries())).toThrow("light heightMetres requires metres");
+  });
+
+  it("rejects a non-metre height unit for any layer carrying a height, not only lights", () => {
+    // DSPM_HUNI declares the unit of landmark.heightMetres just as it does the
+    // light's, so a cell with LNDMRK and no LIGHTS must still be rejected.
+    const landmarkOnly = summaries();
+    landmarkOnly.delete("LIGHTS");
+    landmarkOnly.set("LNDMRK" as never, JSON.stringify(summary("LNDMRK", 6, [-87.8, 43, -87.7, 43.1])));
+
+    expect(parseMetadata(metadata(), landmarkOnly).layers).toContain("LNDMRK");
+    expect(() => parseMetadata(metadata({ DSPM_HUNI: 2 }), landmarkOnly))
+      .toThrow("Unsupported S-57 height unit code 2; landmark heightMetres requires metres");
+    // A cell holding both names both layers, so the message stays accurate.
+    const both = summaries();
+    both.set("LNDMRK" as never, JSON.stringify(summary("LNDMRK", 6, [-87.8, 43, -87.7, 43.1])));
+    expect(() => parseMetadata(metadata({ DSPM_HUNI: 2 }), both))
+      .toThrow("light and landmark heightMetres requires metres");
+    // A cell with neither never consults DSPM_HUNI, so its absence is not a fault.
+    const neither = summaries();
+    neither.delete("LIGHTS");
+    expect(parseMetadata(metadata({ DSPM_HUNI: undefined }), neither).layers).not.toContain("LIGHTS");
   });
 
   it("identifies edition zero as a cancelled ENC cell", () => {

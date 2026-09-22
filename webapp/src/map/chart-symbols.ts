@@ -12,7 +12,11 @@ import {
   type Point,
   type Rgb,
 } from "./raster-icon";
-import { firstS57CodeExpression } from "./s57-codes";
+import {
+  firstS57CodeExpression,
+  FUNCTION_LIGHT_SUPPORT,
+  s57CodeListIncludesExpression,
+} from "./s57-codes";
 
 /**
  * Buoy, danger and restricted-area symbols, generated at runtime.
@@ -67,6 +71,26 @@ export const DANGER_IMAGE_IDS: Record<DangerKind, string> = {
   rock: "chart-danger-rock",
 };
 
+/**
+ * The `LNDMRK` shapes. A landmark is drawn as an outline rather than a filled
+ * body: these are structures ashore, not aids afloat, and an outline stays
+ * legible over the land fill it stands on.
+ *
+ * `light-support` is the tower of a lighthouse. It is keyed off `FUNCTN` 33 and
+ * not off any category, because a light is carried by a chimney or a dome as
+ * well as by a tower, and it is drawn in the magenta a chart reserves for
+ * lights so that the tower, the flare and the light label read as one object.
+ */
+export type LandmarkShapeKey =
+  | "tower" | "mast" | "chimney" | "spire" | "dome" | "mark" | "light-support";
+
+const LANDMARK_SHAPE_KEYS: readonly LandmarkShapeKey[] = [
+  "tower", "mast", "chimney", "spire", "dome", "mark", "light-support",
+];
+
+/** The magenta a chart uses for lights, matching the light label. */
+const LIGHT_INK: Rgb = [176, 0, 120];
+
 /** The red hatch that marks water where anchoring is prohibited. */
 export const ANCHORING_PROHIBITED_PATTERN_ID = "chart-anchoring-prohibited-hatch";
 export const ANCHORING_PATTERN_SIZE = 16;
@@ -120,6 +144,31 @@ export function renderAnchoringProhibitedPattern(
     opacity: 0.6,
     covers: (x, y) => ((x + y) % HATCH_PERIOD + HATCH_PERIOD) % HATCH_PERIOD < HATCH_WIDTH,
   }], pixelRatio);
+}
+
+export function landmarkImageId(shape: LandmarkShapeKey): string {
+  return `chart-landmark-${shape}`;
+}
+
+/** Rasterizes one landmark outline, with a light casing behind it. */
+export function renderLandmarkIcon(
+  shape: LandmarkShapeKey,
+  pixelRatio: number = ICON_PIXEL_RATIO,
+): ReturnType<typeof renderIcon> {
+  const mark = landmarkMark(shape);
+  return renderIcon(CHART_ICON_SIZE, [
+    { color: CASING, covers: mark(1.8) },
+    { color: shape === "light-support" ? LIGHT_INK : OUTLINE, covers: mark(0.75) },
+  ], pixelRatio);
+}
+
+/** Registers every landmark outline, skipping any the style already has. */
+export function addLandmarkImages(map: Pick<MapLibreMap, "hasImage" | "addImage">): void {
+  for (const shape of LANDMARK_SHAPE_KEYS) {
+    const imageId = landmarkImageId(shape);
+    if (map.hasImage(imageId)) continue;
+    map.addImage(imageId, renderLandmarkIcon(shape), { pixelRatio: ICON_PIXEL_RATIO });
+  }
 }
 
 /** Registers every buoy icon, skipping any the style already has. */
@@ -182,6 +231,104 @@ export function dangerIconExpression(): ExpressionSpecification {
     "rock", DANGER_IMAGE_IDS.rock,
     DANGER_IMAGE_IDS.obstruction,
   ];
+}
+
+/**
+ * Picks a landmark outline. `FUNCTN` 33 decides first and on its own: a light
+ * support is a lighthouse structure whatever `CATLMK` calls it, and NOAA charts
+ * light supports as chimneys and domes as well as towers. Category only says
+ * what kind of structure an unlit landmark is, and a category with no outline
+ * of its own — a cairn, a monument, a flagstaff — takes the plain position mark
+ * rather than borrowing the shape of something it is not.
+ */
+export function landmarkIconExpression(): ExpressionSpecification {
+  return [
+    "case",
+    s57CodeListIncludesExpression("function", FUNCTION_LIGHT_SUPPORT),
+    landmarkImageId("light-support"),
+    [
+      "match", firstS57CodeExpression("category"),
+      "17", landmarkImageId("tower"),
+      "7", landmarkImageId("mast"),
+      "3", landmarkImageId("chimney"),
+      "20", landmarkImageId("spire"),
+      "15", landmarkImageId("dome"),
+      landmarkImageId("mark"),
+    ],
+  ];
+}
+
+/**
+ * Each landmark outline as a function of stroke half-width, so the casing and
+ * the outline come from one description, exactly as a danger mark does.
+ *
+ * Every shape stands on the bottom edge of the icon, which `icon-anchor:
+ * "bottom"` puts on the charted position, so the structure rises from its own
+ * spot the way it does on the ground.
+ */
+function landmarkMark(shape: LandmarkShapeKey): (halfWidth: number) => (x: number, y: number) => boolean {
+  const base = (halfWidth: number) => stroke([4.6, 15], [11.4, 15], halfWidth);
+  if (shape === "tower") {
+    // A splayed tower under a gallery wider than its body.
+    return (halfWidth) => union(
+      base(halfWidth),
+      stroke([5.4, 15], [6.4, 5.5], halfWidth),
+      stroke([10.6, 15], [9.6, 5.5], halfWidth),
+      stroke([5.2, 5.5], [10.8, 5.5], halfWidth),
+    );
+  }
+  if (shape === "light-support") {
+    // The same tower carrying a lantern: the flare of the co-located light
+    // springs from the charted position at the tower's foot.
+    return (halfWidth) => union(
+      base(halfWidth),
+      stroke([5.4, 15], [6.4, 6.5], halfWidth),
+      stroke([10.6, 15], [9.6, 6.5], halfWidth),
+      stroke([5.2, 6.5], [10.8, 6.5], halfWidth),
+      ring(8, 3.8, 2.3, halfWidth),
+    );
+  }
+  if (shape === "mast") {
+    // A bare pole on a footing, crossed near the top.
+    return (halfWidth) => union(
+      base(halfWidth),
+      stroke([8, 15], [8, 2], halfWidth),
+      stroke([5.8, 5], [10.2, 5], halfWidth),
+    );
+  }
+  if (shape === "chimney") {
+    // A narrow stack, barely tapered, capped rather than galleried.
+    return (halfWidth) => union(
+      base(halfWidth),
+      stroke([6.6, 15], [7, 3.5], halfWidth),
+      stroke([9.4, 15], [9, 3.5], halfWidth),
+      stroke([6.8, 3.5], [9.2, 3.5], halfWidth),
+    );
+  }
+  if (shape === "spire") {
+    return (halfWidth) => union(
+      base(halfWidth),
+      stroke([5.6, 15], [8, 2.2], halfWidth),
+      stroke([10.4, 15], [8, 2.2], halfWidth),
+    );
+  }
+  if (shape === "dome") {
+    // The upper half of a circle, sitting on its own springing line.
+    return (halfWidth) => {
+      const outline = ring(8, 12.5, 4.4, halfWidth);
+      return union(
+        base(halfWidth),
+        stroke([3.6, 12.5], [12.4, 12.5], halfWidth),
+        (x, y) => y <= 12.5 && outline(x, y),
+      );
+    };
+  }
+  // Everything else — a cairn, a monument, a statue — takes the plain circle
+  // and centre dot that marks a charted position and claims no shape for it.
+  return (halfWidth) => union(
+    ring(8, 10.4, 3.7, halfWidth),
+    stroke([8, 10.4], [8, 10.4], halfWidth + 0.6),
+  );
 }
 
 /**

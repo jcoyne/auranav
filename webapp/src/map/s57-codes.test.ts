@@ -4,11 +4,13 @@ import {
   CONDITION_RUINED,
   describeS57Code,
   describeS57CodeList,
+  FUNCTION_LIGHT_SUPPORT,
   parseS57CodeList,
   s57AttributeLabel,
   s57CodeListIncludes,
   s57CodeListIncludesExpression,
   s57Meaning,
+  VISUALLY_CONSPICUOUS,
 } from "./s57-codes";
 
 describe("S-57 code meanings", () => {
@@ -80,6 +82,52 @@ describe("S-57 code meanings", () => {
     expect(s57Meaning("CONDTN", "7")).toBeUndefined();
     expect(s57AttributeLabel("CATSLC")).toBe("shoreline construction");
     expect(s57AttributeLabel("CONDTN")).toBe("condition");
+  });
+
+  it("reads the landmark, function and conspicuity tables GDAL publishes", () => {
+    expect(describeS57Code("CATLMK", "17")).toBe("tower");
+    expect(describeS57Code("CATLMK", "7")).toBe("mast");
+    expect(describeS57Code("CATLMK", "3")).toBe("chimney");
+    expect(describeS57Code("CATLMK", "20")).toBe("spire/minaret");
+    expect(describeS57Code("CATLMK", "15")).toBe("dome");
+    expect(describeS57Code("CATLMK", "1")).toBe("cairn");
+    expect(describeS57Code("FUNCTN", FUNCTION_LIGHT_SUPPORT)).toBe("light support");
+    expect(describeS57Code("FUNCTN", "30")).toBe("television");
+    expect(describeS57Code("FUNCTN", "42")).toBe("bus station");
+    expect(describeS57Code("CONVIS", VISUALLY_CONSPICUOUS)).toBe("visual conspicuous");
+    expect(describeS57Code("CONVIS", "2")).toBe("not visual conspicuous");
+    // A mast carrying a light lists both functions, and both are named.
+    expect(describeS57CodeList("FUNCTN", "30,33")).toBe("television, light support");
+  });
+
+  it("shows a bare code for a landmark, function or conspicuity code with no entry", () => {
+    // `CATLMK` stops at 20, `FUNCTN` runs 2 through 42 with no code 1, and
+    // `CONVIS` stops at 2. An undocumented code must not borrow a neighbour.
+    expect(describeS57Code("CATLMK", "21")).toBe("landmark category 21");
+    expect(describeS57Code("FUNCTN", "1")).toBe("function 1");
+    expect(describeS57Code("FUNCTN", "43")).toBe("function 43");
+    expect(describeS57Code("CONVIS", "3")).toBe("visual conspicuity 3");
+    expect(s57Meaning("CATLMK", "21")).toBeUndefined();
+    expect(s57Meaning("FUNCTN", "43")).toBeUndefined();
+    expect(s57Meaning("CONVIS", "3")).toBeUndefined();
+    expect(s57AttributeLabel("CATLMK")).toBe("landmark category");
+    expect(s57AttributeLabel("FUNCTN")).toBe("function");
+    expect(describeS57CodeList("FUNCTN", "33,43")).toBe("light support, function 43");
+  });
+
+  it("finds a light support inside a multi-valued function list", () => {
+    // FUNCTN normalises to a comma list, so a light support arrives as "30,33"
+    // as readily as as "33", and 33 must not be found inside 133 or 330.
+    expect(s57CodeListIncludes("33", FUNCTION_LIGHT_SUPPORT)).toBe(true);
+    expect(s57CodeListIncludes("30,33", FUNCTION_LIGHT_SUPPORT)).toBe(true);
+    expect(s57CodeListIncludes("33,30", FUNCTION_LIGHT_SUPPORT)).toBe(true);
+    expect(s57CodeListIncludes("30", FUNCTION_LIGHT_SUPPORT)).toBe(false);
+    expect(s57CodeListIncludes("330", FUNCTION_LIGHT_SUPPORT)).toBe(false);
+    expect(s57CodeListIncludes(undefined, FUNCTION_LIGHT_SUPPORT)).toBe(false);
+    // `conspicuous` is single-valued, and arrives as a number as well as text.
+    expect(s57CodeListIncludes(1, VISUALLY_CONSPICUOUS)).toBe(true);
+    expect(s57CodeListIncludes("2", VISUALLY_CONSPICUOUS)).toBe(false);
+    expect(s57CodeListIncludes(undefined, VISUALLY_CONSPICUOUS)).toBe(false);
   });
 
   it("finds one code in a list, in TypeScript and in a style expression alike", () => {

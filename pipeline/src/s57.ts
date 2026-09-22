@@ -8,13 +8,13 @@ const REQUIRED_LAYERS = [
   "COALNE", "DEPARE", "DEPCNT", "SOUNDG", "LIGHTS", "LNDARE", "LNDRGN", "BUAARE", "SEAARE",
   "BOYLAT", "BOYCAR", "BOYSPP", "BOYSAW", "BOYISD", "WRECKS", "OBSTRN", "UWTROC", "HRBFAC",
   "ACHARE", "CBLARE", "RESARE", "PIPARE", "CBLSUB", "PIPSOL", "SLCONS", "PONTON", "FLODOC",
-  "MORFAC",
+  "MORFAC", "LNDMRK",
 ] as const;
 const INSPECTED_LAYERS = ["M_COVR", ...REQUIRED_LAYERS] as const;
 const LAYER_NAMES = [
   "coverage", "coastline", "depth-area", "depth-contour", "sounding", "light", "land-area", "land-label",
   "water-label", "buoy", "danger", "harbour-facility", "anchorage", "restricted-area",
-  "restricted-area-edge", "cable", "shoreline-structure", "mooring",
+  "restricted-area-edge", "cable", "shoreline-structure", "mooring", "landmark",
 ] as const;
 
 /**
@@ -23,6 +23,13 @@ const LAYER_NAMES = [
  * borrow this span and appear at the zoom band of a small island.
  */
 const MINIMUM_LABEL_SPAN_DEGREES = 0.005;
+
+/**
+ * Output layers whose `heightMetres` is read in the unit the cell declares in
+ * DSPM_HUNI, keyed by the S-57 class it comes from. A cell carrying any of
+ * them must declare metres, or the pipeline would label a foot value as metres.
+ */
+const HEIGHT_SOURCE_LAYERS: Readonly<Record<string, string>> = { LIGHTS: "light", LNDMRK: "landmark" };
 
 /**
  * Coverage edges are stored to more decimal places than a feature boundary
@@ -270,6 +277,14 @@ export const EXTRACTS: readonly ExtractSpec[] = [
     properties: [],
     dialect: "SQLITE",
     buildSql: mooringSql,
+    mayBeEmpty: true,
+  },
+  {
+    sources: ["LNDMRK"],
+    outputLayer: "landmark",
+    properties: [],
+    dialect: "SQLITE",
+    buildSql: landmarkSql,
     mayBeEmpty: true,
   },
 ];
@@ -591,11 +606,20 @@ function restrictedAreaSql(sources: readonly InspectedLayer[], constants: readon
 function restrictedAreaEdgeSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
   const areas = unionSql("restricted-area-edge", sources, (source) => {
     const variant = variantFor(RESTRICTED_AREA_VARIANTS, source, "restricted-area-edge");
-    return ["OBJNAM AS name", `'${variant.kind}' AS kind`, anchoringColumn(), "geometry"];
+    return [
+      "OBJNAM AS name",
+      `'${variant.kind}' AS kind`,
+      // An outline is drawn only where the area restricts a vessel. An area
+      // described by category alone, such as an ecological reserve, is labelled
+      // and left unoutlined, so the display needs the restriction here too.
+      codeList("RESTRN", "restriction"),
+      anchoringColumn(),
+      "geometry",
+    ];
   }, chartedRestrictionCondition());
   const trimmed = `ST_Difference(ST_Boundary(area.geometry), `
     + `ST_Buffer(ST_Boundary(cover.extent), ${EDGE_TOLERANCE_DEGREES}))`;
-  const columns = ["name", "kind", "anchoring", ...constants, `${trimmed} AS geometry`];
+  const columns = ["name", "kind", "restriction", "anchoring", ...constants, `${trimmed} AS geometry`];
   return `SELECT * FROM (SELECT ${columns.join(", ")} FROM (${areas}) area, `
     + `(SELECT ST_Union(geometry) AS extent FROM M_COVR WHERE CATCOV = 1) cover) `
     + `WHERE geometry IS NOT NULL`;
@@ -656,6 +680,24 @@ function mooringSql(sources: readonly InspectedLayer[], constants: readonly stri
     codeList("CATMOR", "category"),
     codeList("CONDTN", "condition"),
     codeList("WATLEV", "waterLevel"),
+    ...constants,
+    "geometry",
+  ]);
+}
+
+/**
+ * LNDMRK carries the tower a light sits on, charted as a point or an area, and
+ * both primitives are kept: an area landmark is a structure with real extent.
+ * `heightMetres` is the height of the structure, not the elevation of the
+ * light's focal plane that `light.heightMetres` holds.
+ */
+function landmarkSql(sources: readonly InspectedLayer[], constants: readonly string[]): string {
+  return unionSql("landmark", sources, () => [
+    "OBJNAM AS name",
+    codeList("CATLMK", "category"),
+    codeList("FUNCTN", "function"),
+    "HEIGHT AS heightMetres",
+    "CONVIS AS conspicuous",
     ...constants,
     "geometry",
   ]);
@@ -787,10 +829,15 @@ export function parseMetadata(metadataJson: string, summaries: ReadonlyMap<Inspe
     layers.push(requiredLayer);
   }
   if (layers.length === 0) throw new Error("S-57 cell contains none of the supported chart layers");
-  if (layers.includes("LIGHTS")) {
+  // DSPM_HUNI declares the unit of every height in the cell, so the guard has
+  // to fire for whichever height-bearing class the cell actually holds.
+  const heightLayers = layers.flatMap((layer) => HEIGHT_SOURCE_LAYERS[layer] ?? []);
+  if (heightLayers.length > 0) {
     const heightUnit = requireInteger(properties, "DSPM_HUNI");
     if (heightUnit !== 1) {
-      throw new Error(`Unsupported S-57 height unit code ${heightUnit}; light heightMetres requires metres`);
+      throw new Error(
+        `Unsupported S-57 height unit code ${heightUnit}; ${heightLayers.join(" and ")} heightMetres requires metres`,
+      );
     }
   }
   return { cell, bounds, layers };

@@ -11,6 +11,18 @@ export type LightProperties = {
   heightDatum?: unknown;
 };
 
+/**
+ * How a light's own height is labelled.
+ *
+ * `light.heightMetres` is the elevation of the light's focal plane above the
+ * vertical datum named by `heightDatum`. The lighthouse structure carrying it
+ * is a `landmark` with a `heightMetres` of its own, which is the height of the
+ * structure. Two measurements of one lighthouse: a bare "Height" on either
+ * popup would invite reading one for the other, so each says which it is. See
+ * `LANDMARK_HEIGHT_LABEL` in `chart-features.ts`.
+ */
+export const LIGHT_HEIGHT_LABEL = "Focal plane elevation";
+
 const COLOR_ABBREVIATIONS: Record<string, string> = {
   white: "W",
   red: "R",
@@ -107,7 +119,7 @@ export function formatLightDetails(properties: LightProperties): string {
     group === undefined ? undefined : `Group: ${group}`,
     color === undefined ? undefined : `Color: ${expandColor(color)}`,
     period === undefined ? undefined : `Period: ${formatNumber(period)} seconds`,
-    height === undefined ? undefined : `Height: ${formatNumber(height)} metres`,
+    height === undefined ? undefined : `${LIGHT_HEIGHT_LABEL}: ${formatNumber(height)} metres`,
     range === undefined ? undefined : `Nominal range: ${formatNumber(range)} nautical miles`,
     sectorStart === undefined && sectorEnd === undefined
       ? undefined

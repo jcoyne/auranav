@@ -17,6 +17,7 @@ export type S57Attribute =
   | "CATCBL"
   | "CATHAF"
   | "CATLAM"
+  | "CATLMK"
   | "CATMOR"
   | "CATOBS"
   | "CATPIP"
@@ -27,12 +28,23 @@ export type S57Attribute =
   | "COLOUR"
   | "COLPAT"
   | "CONDTN"
+  | "CONVIS"
+  | "FUNCTN"
   | "QUASOU"
   | "RESTRN"
   | "WATLEV";
 
 /** `CONDTN` 2. A ruin is not something to tie to, so the style reads it too. */
 export const CONDITION_RUINED = "2";
+
+/**
+ * `FUNCTN` 33. The landmark carrying a charted light: the tower of a lighthouse,
+ * which S-57 charts separately from the `LIGHTS` object at the same position.
+ */
+export const FUNCTION_LIGHT_SUPPORT = "33";
+
+/** `CONVIS` 1. A landmark a mariner can take a visual bearing on. */
+export const VISUALLY_CONSPICUOUS = "1";
 
 type S57AttributeTable = {
   /** Used both as a popup heading and as the wording of an unknown code. */
@@ -109,6 +121,31 @@ const S57_ATTRIBUTES: Readonly<Record<S57Attribute, S57AttributeTable>> = {
       "2": "starboard-hand lateral mark",
       "3": "preferred channel to starboard lateral mark",
       "4": "preferred channel to port lateral mark",
+    },
+  },
+  CATLMK: {
+    label: "landmark category",
+    meanings: {
+      "1": "cairn",
+      "2": "cemetery",
+      "3": "chimney",
+      "4": "dish aerial",
+      "5": "flagstaff (flagpole)",
+      "6": "flare stack",
+      "7": "mast",
+      "8": "windsock",
+      "9": "monument",
+      "10": "column (pillar)",
+      "11": "memorial plaque",
+      "12": "obelisk",
+      "13": "statue",
+      "14": "cross",
+      "15": "dome",
+      "16": "radar scanner",
+      "17": "tower",
+      "18": "windmill",
+      "19": "windmotor",
+      "20": "spire/minaret",
     },
   },
   CATMOR: {
@@ -296,6 +333,59 @@ const S57_ATTRIBUTES: Readonly<Record<S57Attribute, S57AttributeTable>> = {
       "3": "under reclamation",
       "4": "wingless",
       "5": "planned construction",
+    },
+  },
+  CONVIS: {
+    label: "visual conspicuity",
+    meanings: {
+      "1": "visual conspicuous",
+      "2": "not visual conspicuous",
+    },
+  },
+  FUNCTN: {
+    label: "function",
+    meanings: {
+      "2": "harbour-master's office",
+      "3": "custom office",
+      "4": "health office",
+      "5": "hospital",
+      "6": "post office",
+      "7": "hotel",
+      "8": "railway station",
+      "9": "police station",
+      "10": "water-police station",
+      "11": "pilot office",
+      "12": "pilot lookout",
+      "13": "bank office",
+      "14": "headquarters for district control",
+      "15": "transit shed/warehouse",
+      "16": "factory",
+      "17": "power station",
+      "18": "administrative",
+      "19": "educational facility",
+      "20": "church",
+      "21": "chapel",
+      "22": "temple",
+      "23": "pagoda",
+      "24": "shinto shrine",
+      "25": "buddhist temple",
+      "26": "mosque",
+      "27": "marabout",
+      "28": "lookout",
+      "29": "communication",
+      "30": "television",
+      "31": "radio",
+      "32": "radar",
+      "33": "light support",
+      "34": "microwave",
+      "35": "cooling",
+      "36": "observation",
+      "37": "timeball",
+      "38": "clock",
+      "39": "control",
+      "40": "airship mooring",
+      "41": "stadium",
+      "42": "bus station",
     },
   },
   QUASOU: {

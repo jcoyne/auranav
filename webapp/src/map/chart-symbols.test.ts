@@ -5,15 +5,20 @@ import {
   addAnchoringPatternImage,
   addBuoyImages,
   addDangerImages,
+  addLandmarkImages,
   ANCHORING_PATTERN_SIZE,
   ANCHORING_PROHIBITED_PATTERN_ID,
   buoyIconExpression,
   CHART_ICON_SIZE,
   dangerIconExpression,
   DANGER_IMAGE_IDS,
+  landmarkIconExpression,
+  landmarkImageId,
+  type LandmarkShapeKey,
   renderAnchoringProhibitedPattern,
   renderBuoyIcon,
   renderDangerIcon,
+  renderLandmarkIcon,
 } from "./chart-symbols";
 import { ICON_PIXEL_RATIO } from "./raster-icon";
 
@@ -142,5 +147,81 @@ describe("prohibited anchoring hatch", () => {
     const addImage = vi.fn();
     addAnchoringPatternImage({ hasImage: () => true, addImage } as unknown as MapLibreMap);
     expect(addImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("landmark symbols", () => {
+  const SHAPES: readonly LandmarkShapeKey[] = [
+    "tower", "mast", "chimney", "spire", "dome", "mark", "light-support",
+  ];
+
+  it("takes a light support from FUNCTN 33 whatever CATLMK calls the structure", () => {
+    const expression = landmarkIconExpression();
+    // A lighthouse is charted as a tower, but NOAA also charts light supports
+    // as a chimney and as a dome, and FUNCTN normalises to a comma list.
+    expect(iconFor(expression, { category: "17", function: "33" }))
+      .toBe(landmarkImageId("light-support"));
+    expect(iconFor(expression, { category: "3", function: "30,33" }))
+      .toBe(landmarkImageId("light-support"));
+    expect(iconFor(expression, { category: "15", function: "33,30" }))
+      .toBe(landmarkImageId("light-support"));
+    // 33 must be the whole code, not a digit inside another one.
+    expect(iconFor(expression, { category: "17", function: "330" }))
+      .toBe(landmarkImageId("tower"));
+  });
+
+  it("draws an unlit landmark as what its category says it is, or not at all", () => {
+    const expression = landmarkIconExpression();
+    expect(iconFor(expression, { category: "17" })).toBe(landmarkImageId("tower"));
+    expect(iconFor(expression, { category: "7" })).toBe(landmarkImageId("mast"));
+    expect(iconFor(expression, { category: "3" })).toBe(landmarkImageId("chimney"));
+    expect(iconFor(expression, { category: "20" })).toBe(landmarkImageId("spire"));
+    expect(iconFor(expression, { category: "15" })).toBe(landmarkImageId("dome"));
+    // A cairn, a statue or a code the table does not define claims no shape.
+    expect(iconFor(expression, { category: "1" })).toBe(landmarkImageId("mark"));
+    expect(iconFor(expression, { category: "21" })).toBe(landmarkImageId("mark"));
+    expect(iconFor(expression, {})).toBe(landmarkImageId("mark"));
+  });
+
+  it("registers every outline its expression can name", () => {
+    const registered = new Set(imageIdsAddedBy(addLandmarkImages));
+    expect(registered.size).toBe(SHAPES.length);
+    const expression = landmarkIconExpression();
+    for (const category of ["", "1", "3", "7", "9", "15", "17", "20", "21"]) {
+      for (const funktion of ["", "31", "33", "30,33"]) {
+        expect(registered).toContain(iconFor(expression, { category, function: funktion }));
+      }
+    }
+    const addImage = vi.fn();
+    addLandmarkImages({ hasImage: () => true, addImage } as unknown as MapLibreMap);
+    expect(addImage).not.toHaveBeenCalled();
+  });
+
+  it("stands every outline on the bottom of its icon, which the anchor puts on the position", () => {
+    const foot = Math.round(15 * ICON_PIXEL_RATIO);
+    const centre = Math.round(8 * ICON_PIXEL_RATIO);
+    for (const shape of SHAPES) {
+      const image = renderLandmarkIcon(shape);
+      expect(image.width).toBe(CHART_ICON_SIZE * ICON_PIXEL_RATIO);
+      // Drawn down to its footing, and clear of the corners of its box.
+      expect(alphaAt(image, centre, foot), shape).toBe(255);
+      expect(alphaAt(image, 0, 0), shape).toBe(0);
+    }
+  });
+
+  it("inks a light support in the magenta a chart keeps for lights", () => {
+    // The tower, the flare and the light label are one lighthouse, not two
+    // unrelated aids, so the structure carrying a light is coloured like one.
+    const lantern = renderLandmarkIcon("light-support");
+    const plain = renderLandmarkIcon("tower");
+    const centre = Math.round(8 * ICON_PIXEL_RATIO);
+    const foot = Math.round(15 * ICON_PIXEL_RATIO);
+    expect(colorAt(lantern, centre, foot)).toEqual([176, 0, 120]);
+    expect(colorAt(plain, centre, foot)).not.toEqual(colorAt(lantern, centre, foot));
+    // And it carries a lantern the plain tower does not, reaching above where
+    // the plain tower's gallery stops.
+    const lanternTop = Math.round(1.5 * ICON_PIXEL_RATIO);
+    expect(alphaAt(lantern, centre, lanternTop)).toBeGreaterThan(0);
+    expect(alphaAt(plain, centre, lanternTop)).toBe(0);
   });
 });

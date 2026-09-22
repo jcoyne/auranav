@@ -26,9 +26,11 @@ import {
   addAnchoringPatternImage,
   addBuoyImages,
   addDangerImages,
+  addLandmarkImages,
   ANCHORING_PROHIBITED_PATTERN_ID,
   buoyIconExpression,
   dangerIconExpression,
+  landmarkIconExpression,
 } from "./chart-symbols";
 import {
   formatAnchorageDetails,
@@ -37,12 +39,18 @@ import {
   formatDangerDetails,
   formatFeatureDetailsList,
   formatHarbourFacilityDetails,
+  formatLandmarkDetails,
   formatMooringDetails,
   formatRestrictedAreaDetails,
   formatShorelineStructureDetails,
   type ChartFeatureProperties,
 } from "./chart-features";
-import { CONDITION_RUINED, s57CodeListIncludesExpression } from "./s57-codes";
+import {
+  CONDITION_RUINED,
+  FUNCTION_LIGHT_SUPPORT,
+  s57CodeListIncludesExpression,
+  VISUALLY_CONSPICUOUS,
+} from "./s57-codes";
 
 export const DEMO_SOURCE_IDS = {
   coastline: "demo-coastline",
@@ -89,6 +97,15 @@ const ARMOURING_MIN_ZOOM = 13;
 const MOORING_MIN_ZOOM = 12;
 const RUIN_LABEL_MIN_ZOOM = 14;
 
+/**
+ * A landmark a mariner can take a bearing on — conspicuous, or carrying a light
+ * — is worth the clutter as early as an aid is. An ordinary mast or chimney is
+ * not, and there are far more of those, so it waits until the chart is detailed.
+ */
+const LANDMARK_MIN_ZOOM = 10;
+const LANDMARK_ORDINARY_MIN_ZOOM = 13;
+const LANDMARK_LABEL_MIN_ZOOM = 12;
+
 const CHART_FONT = ["Noto Sans Regular"];
 const LABEL_HALO = "#f5fbfc";
 const TRANSPARENT = "rgba(0, 0, 0, 0)";
@@ -119,6 +136,13 @@ const ARMOURING_CATEGORIES = ["8", "9", "10"];
 
 const SHORELINE_STRUCTURE_PEER_PREFIX = "chart-shoreline-structure-";
 const MOORING_PEER_PREFIX = "chart-mooring-";
+const LANDMARK_PEER_PREFIX = "chart-landmark-";
+
+/** The magenta a chart reserves for lights, shared with the light label. */
+const LIGHT_INK = "#b00078";
+/** A conspicuous landmark's name is set darker than an ordinary one's. */
+const LANDMARK_LABEL_COLOR = "#3f3a26";
+const LANDMARK_FAINT_LABEL_COLOR = "#6f6a5c";
 
 /**
  * These layers carry point, line and area primitives together: the same pier is
@@ -128,6 +152,13 @@ const MOORING_PEER_PREFIX = "chart-mooring-";
 const POINT_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "Point"];
 const LINE_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "LineString"];
 const POLYGON_ONLY: ExpressionSpecification = ["==", ["geometry-type"], "Polygon"];
+/**
+ * `LNDMRK` is charted as points and as areas. A symbol draws either — MapLibre
+ * places one at a polygon's centroid — so the mark and the name are named for
+ * both primitives explicitly rather than by leaving the filter off, and a line
+ * primitive, which this layer never carries, would be excluded if one appeared.
+ */
+const POINT_OR_POLYGON: ExpressionSpecification = ["any", POINT_ONLY, POLYGON_ONLY];
 
 export function addPackageChartLayers(
   map: MapLibreMap,
@@ -314,6 +345,9 @@ function addVectorLayers(
   // belongs with land and coastline and beneath every aid and hazard.
   phase("shoreline-structure", addShorelineStructureLayers);
   phase("mooring", addMooringLayers);
+  // A landmark charted as an area is a building footprint ashore, so it draws
+  // with the other built structures and beneath every aid and hazard.
+  phase("landmark", addLandmarkAreaLayers);
   phase("harbour-facility", addHarbourFacilityMarkerLayer);
 
   phase("sounding", addSoundingHitLayer);
@@ -324,10 +358,15 @@ function addVectorLayers(
   phase("cable", addCableHitLayer);
   phase("shoreline-structure", addShorelineStructureHitLayers);
   phase("mooring", addMooringHitLayers);
+  phase("landmark", addLandmarkHitLayer);
 
   phase("buoy", addBuoySymbolLayer);
   phase("danger", addDangerSymbolLayer);
   phase("light", addLightSymbolLayer);
+  // After the light, so a lighthouse's tower keeps its whole silhouette over
+  // the flare that springs from the same charted point; before every label, so
+  // a name is never placed across a bearing mark.
+  phase("landmark", addLandmarkSymbolLayer);
   phase("depth-contour", addDepthContourLabelLayer);
   phase("sounding", addSoundingLabelLayer);
   phase("light", addLightLabelLayer);
@@ -336,6 +375,7 @@ function addVectorLayers(
   // A ruin outranks a place name: it is the reason not to tie up here.
   phase("shoreline-structure", addShorelineStructureRuinLabelLayer);
   phase("mooring", addMooringRuinLabelLayer);
+  phase("landmark", addLandmarkLabelLayer);
   phase("harbour-facility", addHarbourFacilityLabelLayer);
   phase("anchorage", addAnchorageLabelLayer);
   phase("restricted-area", addRestrictedAreaLabelLayer);
@@ -613,6 +653,174 @@ function addMooringLayers(context: LayerContext): string[] {
 }
 
 /**
+ * Whether a landmark carries a charted light. `FUNCTN` is a code list and a
+ * light support may arrive as `"30,33"`, so the whole token is searched for
+ * rather than the property compared to `"33"`. This is the discriminator for a
+ * lighthouse structure: NOAA charts light supports whose `CATLMK` is a chimney
+ * or a dome, so the category cannot stand in for it.
+ */
+function isLightSupport(): ExpressionSpecification {
+  return s57CodeListIncludesExpression("function", FUNCTION_LIGHT_SUPPORT);
+}
+
+/** `CONVIS` 1: a landmark a mariner can take a visual bearing on. */
+function isConspicuous(): ExpressionSpecification {
+  return s57CodeListIncludesExpression("conspicuous", VISUALLY_CONSPICUOUS);
+}
+
+/** The landmarks worth drawing before the chart is detailed. */
+function isBearingMark(): ExpressionSpecification {
+  return ["any", isConspicuous(), isLightSupport()];
+}
+
+/** Picks one value for a conspicuous landmark and another for an ordinary one. */
+function byConspicuous(conspicuous: string | number, ordinary: string | number): ExpressionSpecification {
+  return ["case", isConspicuous(), conspicuous, ordinary];
+}
+
+/**
+ * Holds ordinary landmarks back to their own zoom inside a shared layer, the
+ * way `armouringOpacity` holds back shoreline armouring: the zoom expression
+ * has to be the outermost one, so this is a `step` over zoom whose branches are
+ * the per-feature values rather than a `case` with a zoom test buried in an arm.
+ */
+function landmarkOpacity(opacity: number): ExpressionSpecification {
+  return [
+    "step", ["zoom"],
+    ["case", isBearingMark(), opacity, 0],
+    LANDMARK_ORDINARY_MIN_ZOOM, opacity,
+  ];
+}
+
+/**
+ * The area primitives of `LNDMRK`: a landmark large enough to be charted as a
+ * footprint rather than as a point. Drawn as built ground, like a pier, with
+ * the fill doubling as the area's touch target.
+ */
+function addLandmarkAreaLayers(context: LayerContext): string[] {
+  const fillLayerId = addLayer(context, {
+    id: `chart-landmark-fill-${context.index}`,
+    type: "fill",
+    source: context.sourceId,
+    "source-layer": "landmark",
+    minzoom: LANDMARK_MIN_ZOOM,
+    filter: POLYGON_ONLY,
+    paint: {
+      "fill-color": STRUCTURE_FILL,
+      "fill-opacity": landmarkOpacity(0.9),
+    },
+  });
+  addFeatureInteraction(context, fillLayerId, LANDMARK_PEER_PREFIX, AREA_FEATURE, formatLandmarkDetails);
+  return [
+    fillLayerId,
+    addLayer(context, {
+      id: `chart-landmark-edge-${context.index}`,
+      type: "line",
+      source: context.sourceId,
+      "source-layer": "landmark",
+      minzoom: LANDMARK_MIN_ZOOM,
+      filter: POLYGON_ONLY,
+      paint: {
+        "line-color": ["case", isLightSupport(), LIGHT_INK, STRUCTURE_INK],
+        "line-width": byConspicuous(1.6, 1),
+        "line-opacity": landmarkOpacity(1),
+      },
+    }),
+  ];
+}
+
+function addLandmarkHitLayer(context: LayerContext): string[] {
+  const layerId = addLayer(context, {
+    id: `chart-landmark-hit-${context.index}`,
+    type: "circle",
+    source: context.sourceId,
+    "source-layer": "landmark",
+    minzoom: LANDMARK_MIN_ZOOM,
+    filter: POINT_ONLY,
+    paint: { "circle-color": TRANSPARENT, "circle-radius": 14 },
+  });
+  addFeatureInteraction(context, layerId, LANDMARK_PEER_PREFIX, POINT_FEATURE, formatLandmarkDetails);
+  return [layerId];
+}
+
+/**
+ * The landmark mark itself, and how it composes with the light flare.
+ *
+ * A lighthouse is charted twice, as a `LIGHTS` point and as an `LNDMRK` point
+ * at the identical coordinate, so the tower mark and the flare cannot be pulled
+ * apart by collision priority: they land on the same pixel. They are composed
+ * instead. The mark is anchored `bottom`, which stands the tower on the charted
+ * position; the flare's sharp tip is anchored at that same position and sweeps
+ * up and to the right. The two therefore spring from one point and read as a
+ * lit structure rather than as two aids that happen to coincide, and the light
+ * support's outline is drawn in the magenta of the flare's own label.
+ *
+ * `icon-allow-overlap` is what keeps the pair intact. The flare already sets it
+ * along with `icon-ignore-placement`, so the flare can neither be suppressed
+ * nor suppress; setting it here makes the tower equally unsuppressable. The
+ * tower does *not* ignore placement, so unlike the flare it still holds its
+ * ground in the collision index against the labels placed after it.
+ */
+function addLandmarkSymbolLayer(context: LayerContext): string[] {
+  addLandmarkImages(context.map);
+  return [addLayer(context, {
+    id: `chart-landmark-symbol-${context.index}`,
+    type: "symbol",
+    source: context.sourceId,
+    "source-layer": "landmark",
+    minzoom: LANDMARK_MIN_ZOOM,
+    filter: POINT_OR_POLYGON,
+    layout: {
+      "icon-image": landmarkIconExpression(),
+      // A landmark you can take a bearing on is drawn larger than one you cannot.
+      "icon-size": byConspicuous(1, 0.75),
+      "icon-anchor": "bottom",
+      "icon-allow-overlap": true,
+    },
+    paint: { "icon-opacity": landmarkOpacity(1) },
+  })];
+}
+
+/**
+ * The landmark's name. For a lighthouse this is the only place the name
+ * appears: the light itself is labelled with its characteristic, not its name,
+ * so `Devils Island Light` reaches the chart through the structure.
+ */
+function addLandmarkLabelLayer(context: LayerContext): string[] {
+  return [addLayer(context, {
+    id: `chart-landmark-label-${context.index}`,
+    type: "symbol",
+    source: context.sourceId,
+    "source-layer": "landmark",
+    minzoom: LANDMARK_LABEL_MIN_ZOOM,
+    filter: POINT_OR_POLYGON,
+    layout: {
+      // An unnamed landmark shows its mark alone.
+      "text-field": ["coalesce", ["get", "name"], ""],
+      "text-font": CHART_FONT,
+      "text-size": byConspicuous(11, 10),
+      "text-max-width": 9,
+      // The mark stands above the point and the flare sweeps up and to the
+      // right of it, so the name is offered the space to the left and below.
+      "text-variable-anchor": ["left", "bottom-left", "bottom", "bottom-right", "right"],
+      "text-radial-offset": 0.9,
+      "text-allow-overlap": false,
+      "text-padding": 4,
+    },
+    paint: {
+      "text-color": [
+        "case",
+        isLightSupport(), LIGHT_INK,
+        byConspicuous(LANDMARK_LABEL_COLOR, LANDMARK_FAINT_LABEL_COLOR),
+      ],
+      "text-halo-color": LABEL_HALO,
+      "text-halo-width": 1.5,
+      "text-opacity": landmarkOpacity(1),
+    },
+  })];
+}
+
+/**
  * An anchorage is where anchoring is invited, so it reads as a calm blue wash
  * with a dashed edge, distinct from the warning colours of a restricted area.
  */
@@ -674,6 +882,14 @@ function addRestrictedAreaLayers(context: LayerContext): string[] {
  * The outline comes from `restricted-area-edge`, whose cell-boundary cut edges
  * the pipeline has already removed. Drawing it from the polygon instead would
  * put a seam through any area two cells share.
+ *
+ * Only an area that carries a `restriction` is outlined. An area described by
+ * `category` alone is a designation rather than a rule binding on a vessel —
+ * the Apostle Islands National Lakeshore is `CATREA` 23 with no `RESTRN` — and
+ * its boundary is a long line that reads as a depth contour. Those areas keep
+ * their label, which is where the meaning is, and lose the line. The test is
+ * the presence of a restriction and not of `anchoring`, which is derived from
+ * `RESTRN` 1 and 2 alone and would wrongly drop a security zone's outline.
  */
 function addRestrictedAreaEdgeLayer(context: LayerContext): string[] {
   return [addLayer(context, {
@@ -681,11 +897,21 @@ function addRestrictedAreaEdgeLayer(context: LayerContext): string[] {
     type: "line",
     source: context.sourceId,
     "source-layer": "restricted-area-edge",
+    filter: hasValue("restriction"),
     paint: {
       "line-color": anchoringMatch("#b22222", "#c8781a", "#5a6472"),
       "line-width": anchoringMatch(2.2, 1.8, 1),
     },
   })];
+}
+
+/**
+ * Whether a feature really carries a property. A vector tile omits an absent
+ * property altogether, but a producer may also write an empty string, and
+ * `has` alone would call that present.
+ */
+function hasValue(property: string): ExpressionSpecification {
+  return ["all", ["has", property], ["!=", ["to-string", ["get", property]], ""]];
 }
 
 /** Picks a value per `anchoring` state: prohibited, restricted, or neither. */

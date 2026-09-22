@@ -6,10 +6,13 @@ import {
   formatDangerDetails,
   formatFeatureDetailsList,
   formatHarbourFacilityDetails,
+  formatLandmarkDetails,
   formatMooringDetails,
   formatRestrictedAreaDetails,
   formatShorelineStructureDetails,
+  LANDMARK_HEIGHT_LABEL,
 } from "./chart-features";
+import { formatLightDetails, LIGHT_HEIGHT_LABEL } from "./light";
 
 describe("buoy details", () => {
   it("names the buoy, its category, shape and colours", () => {
@@ -196,5 +199,90 @@ describe("details for every feature under a tap", () => {
       (properties) => formatDangerDetails(properties, "metre"),
     );
     expect(details).toBe("Rock\n\nObstruction\nCategory: foul area");
+  });
+});
+
+describe("landmark details", () => {
+  it("names a lighthouse structure from its function, not its category", () => {
+    // Devils Island Light, US4WI1QF: CATLMK 17, FUNCTN 33, HEIGHT 30.5, CONVIS 1.
+    expect(formatLandmarkDetails({
+      name: "Devils Island Light",
+      category: "17",
+      function: "33",
+      heightMetres: 30.5,
+      conspicuous: 1,
+    })).toBe([
+      "Devils Island Light",
+      "Light support",
+      "Visually conspicuous",
+      "Category: tower",
+      "Function: light support",
+      "Structure height: 30.5 metres",
+    ].join("\n"));
+
+    // A light support is not always a tower: US5MKEDC carries them as a
+    // chimney and as a dome, and a multi-valued FUNCTN arrives as a list.
+    expect(formatLandmarkDetails({ category: "3", function: "30,33" })).toBe([
+      "Light support",
+      "Category: chimney",
+      "Function: television, light support",
+    ].join("\n"));
+    expect(formatLandmarkDetails({ category: "15", function: "33" }))
+      .toContain("Light support");
+  });
+
+  it("tells an ordinary landmark apart from one carrying a light", () => {
+    const mast = formatLandmarkDetails({ name: "WXYZ", category: "7", function: "31" });
+    expect(mast).toBe("WXYZ\nLandmark\nCategory: mast\nFunction: radio");
+    expect(mast).not.toContain("Light support");
+    expect(formatLandmarkDetails({ category: "20" })).toBe("Landmark\nCategory: spire/minaret");
+  });
+
+  it("keeps an undocumented landmark code as a code", () => {
+    expect(formatLandmarkDetails({ category: "21", function: "43" }))
+      .toBe("Landmark\nCategory: landmark category 21\nFunction: function 43");
+  });
+
+  it("drops the height line rather than printing a height it does not have", () => {
+    // Gull Island and Raspberry Island Lights carry FUNCTN 33 and no HEIGHT.
+    const noHeight = formatLandmarkDetails({ name: "Gull Island Light", function: "33" });
+    expect(noHeight).toBe("Gull Island Light\nLight support\nFunction: light support");
+    expect(noHeight).not.toContain(LANDMARK_HEIGHT_LABEL);
+    expect(noHeight).not.toContain("undefined");
+    expect(formatLandmarkDetails({ function: "33", heightMetres: null }))
+      .not.toContain(LANDMARK_HEIGHT_LABEL);
+    // Michigan Island Light is 3.4 m; Outer Island Light 39.6 m.
+    expect(formatLandmarkDetails({ heightMetres: 3.4 })).toContain("Structure height: 3.4 metres");
+    expect(formatLandmarkDetails({ heightMetres: 12 })).toContain("Structure height: 12 metres");
+  });
+});
+
+describe("the two heights of one lighthouse", () => {
+  it("never labels the structure height and the focal plane elevation alike", () => {
+    // `landmark.heightMetres` is the height of the structure;
+    // `light.heightMetres` is the elevation of the light's focal plane. They
+    // are different measurements of the same lighthouse and neither popup may
+    // say a bare "Height", which would invite reading one for the other.
+    expect(LANDMARK_HEIGHT_LABEL).not.toBe(LIGHT_HEIGHT_LABEL);
+    expect(LANDMARK_HEIGHT_LABEL).not.toContain(LIGHT_HEIGHT_LABEL);
+    expect(LIGHT_HEIGHT_LABEL).not.toContain(LANDMARK_HEIGHT_LABEL);
+    for (const label of [LANDMARK_HEIGHT_LABEL, LIGHT_HEIGHT_LABEL]) {
+      expect(label).not.toBe("Height");
+    }
+
+    // The same lighthouse, described through both layers at one position.
+    const tower = formatLandmarkDetails({
+      name: "Devils Island Light",
+      category: "17",
+      function: "33",
+      heightMetres: 30.5,
+    });
+    const light = formatLightDetails({ characteristic: 2, heightMetres: 25.9 });
+    expect(tower).toContain("Structure height: 30.5 metres");
+    expect(light).toContain("Focal plane elevation: 25.9 metres");
+    expect(tower).not.toMatch(/(^|\n)Height:/);
+    expect(light).not.toMatch(/(^|\n)Height:/);
+    expect(light).not.toContain(LANDMARK_HEIGHT_LABEL);
+    expect(tower).not.toContain(LIGHT_HEIGHT_LABEL);
   });
 });

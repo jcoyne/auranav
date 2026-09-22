@@ -1,6 +1,12 @@
 import type { DepthUnit } from "../chart-package";
 import { depthUnitLabel, formatDepthInUnit } from "./depth";
-import { describeS57CodeList, type S57Attribute } from "./s57-codes";
+import {
+  describeS57CodeList,
+  FUNCTION_LIGHT_SUPPORT,
+  s57CodeListIncludes,
+  VISUALLY_CONSPICUOUS,
+  type S57Attribute,
+} from "./s57-codes";
 
 /**
  * Popup text for the aid, hazard and area layers.
@@ -166,6 +172,49 @@ export function formatShorelineStructureDetails(properties: ChartFeatureProperti
   ]);
 }
 
+/**
+ * How a landmark's own height is labelled.
+ *
+ * `landmark.heightMetres` is the height of the structure; `light.heightMetres`
+ * is the elevation of the light's focal plane above its vertical datum. A
+ * lighthouse carries both, measured from different places to different places,
+ * so neither popup may say a bare "Height" and the two labels are kept apart
+ * deliberately. `LIGHT_HEIGHT_LABEL` in `light.ts` is the other half of this.
+ */
+export const LANDMARK_HEIGHT_LABEL = "Structure height";
+
+/**
+ * A tower, mast, chimney, spire or dome ashore — and the lighthouse structures,
+ * which S-57 charts as an `LNDMRK` whose `FUNCTN` is 33, at the same position as
+ * the `LIGHTS` object it carries.
+ *
+ * The heading comes from the function and not from the category, because a
+ * light is carried by a chimney and by a dome as well as by a tower. `FUNCTN`
+ * is a code list, so a light support may arrive as `"30,33"`.
+ */
+export function formatLandmarkDetails(properties: ChartFeatureProperties): string {
+  const name = text(properties.name);
+  const heading = s57CodeListIncludes(properties.function, FUNCTION_LIGHT_SUPPORT)
+    ? "Light support"
+    : "Landmark";
+  // Sparse in the source: most landmarks carry no HEIGHT at all, and an absent
+  // one drops its line rather than printing an empty measurement.
+  const height = finiteNumber(properties.heightMetres);
+  return lines([
+    name ?? heading,
+    name === undefined ? undefined : heading,
+    // What makes a landmark usable for a bearing leads the rest.
+    s57CodeListIncludes(properties.conspicuous, VISUALLY_CONSPICUOUS)
+      ? "Visually conspicuous"
+      : undefined,
+    labelled("Category", describeS57CodeList("CATLMK", properties.category)),
+    labelled("Function", describeS57CodeList("FUNCTN", properties.function)),
+    height === undefined
+      ? undefined
+      : `${LANDMARK_HEIGHT_LABEL}: ${formatMetres(height)} metres`,
+  ]);
+}
+
 /** A dolphin, bollard, pile mooring or mooring buoy. */
 export function formatMooringDetails(properties: ChartFeatureProperties): string {
   return lines([
@@ -200,6 +249,10 @@ function text(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function formatMetres(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
 
 function finiteNumber(value: unknown): number | undefined {
