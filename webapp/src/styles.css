@@ -194,19 +194,37 @@ button { font: inherit; }
 .north-button:focus-visible { outline: 3px solid #ffb82e; outline-offset: 2px; }
 .north-button:active { transform: translateY(1px); }
 
-.location-status {
+/*
+ * The readouts used to be positioned independently, each offset by a hand-tuned
+ * distance that assumed the height of the one below it. A banner that wrapped to
+ * a second line then covered its neighbour. Stacking them in one flex column
+ * means no readout has to know another's height, and a hidden one collapses.
+ */
+.status-stack {
   position: absolute;
   z-index: 2;
-  top: 1rem;
-  left: 50%;
+  bottom: max(0.8rem, env(safe-area-inset-bottom));
+  left: max(0.8rem, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  /* Clears the compact MapLibre attribution button in the bottom-right corner. */
+  max-width: min(30rem, calc(100% - 5rem));
+  /* The stack is a layout box only; the map keeps the gaps between readouts. */
+  pointer-events: none;
+}
+
+.status-stack > * { pointer-events: auto; }
+
+.location-status {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
   gap: 0.35rem 0.55rem;
-  max-width: min(28rem, calc(100% - 12rem));
+  max-width: 100%;
   padding: 0.55rem 0.8rem;
-  transform: translateX(-50%);
   border: 1px solid rgb(9 42 59 / 25%);
   border-radius: 999px;
   color: #092a3b;
@@ -256,15 +274,11 @@ button { font: inherit; }
  * the map controls above it and of the attribution in the opposite corner.
  */
 .range-bearing-status {
-  position: absolute;
-  z-index: 2;
-  bottom: max(0.8rem, env(safe-area-inset-bottom));
-  left: max(0.8rem, env(safe-area-inset-left));
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.3rem 0.5rem;
-  max-width: min(22rem, calc(100% - 1.6rem));
+  max-width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid rgb(9 42 59 / 25%);
   border-radius: 0.55rem;
@@ -289,7 +303,6 @@ button { font: inherit; }
 }
 
 .range-bearing-details { font-weight: 750; font-variant-numeric: tabular-nums; }
-.range-bearing-reference { color: #40555e; font-size: 0.7rem; }
 
 .range-bearing-fix-state {
   padding: 0.12rem 0.4rem;
@@ -507,20 +520,13 @@ button { font: inherit; }
   .app-header { min-height: 4rem; gap: 0.6rem; }
   .disclaimer { max-width: 8.5rem; font-size: 0.68rem; }
   .drawer-toggle { padding-inline: 0.5rem; }
-  .location-status {
-    top: auto;
-    /* Clears the compact MapLibre attribution button in the bottom-right corner. */
-    bottom: calc(max(0.6rem, env(safe-area-inset-bottom)) + 2.3rem);
-    max-width: calc(100% - 2rem);
-  }
   .scale-status {
     top: 1rem;
     max-width: calc(100% - 8rem);
   }
   .north-indicator { top: 0.75rem; }
-  .range-bearing-status {
-    /* Stacks above the location banner, which moves to the bottom here. */
-    bottom: calc(max(0.6rem, env(safe-area-inset-bottom)) + 5.4rem);
+  .status-stack {
+    bottom: calc(max(0.6rem, env(safe-area-inset-bottom)) + 2.3rem);
     max-width: calc(100% - 1.6rem);
   }
 }

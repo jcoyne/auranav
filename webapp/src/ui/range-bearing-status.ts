@@ -69,14 +69,10 @@ export function renderRangeBearing(container: HTMLElement, options: RangeBearing
   details.textContent = `${formatRange(rangeNauticalMiles(from, mark))} · ${formatBearing(trueBearingDegrees(from, mark))}`;
   details.title = `Mark ${formatLatLng(mark)}`;
 
-  const reference = document.createElement("span");
-  reference.className = "range-bearing-reference";
-  reference.textContent = "true bearing";
-
   state.classList.add(stale ? "is-stale" : "is-current");
   state.textContent = stale ? "Stale fix" : "Current fix";
 
-  container.append(label, details, reference, state);
+  container.append(label, details, state);
   if (!stale) return;
 
   container.classList.add("is-warning", "is-stale");

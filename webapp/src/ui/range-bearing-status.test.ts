@@ -31,7 +31,7 @@ describe("range and bearing readout", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("reports range in nautical miles and a true bearing from a current fix", () => {
+  it("reports range in nautical miles and a bearing from a current fix", () => {
     const container = document.createElement("section");
     const fix = position(10_000);
 
@@ -39,8 +39,7 @@ describe("range and bearing readout", () => {
 
     expect(container.hidden).toBe(false);
     expect(container.textContent).toContain("23.0 NM");
-    expect(container.textContent).toContain("182° T");
-    expect(container.textContent).toContain("true bearing");
+    expect(container.textContent).toContain("182°");
     expect(container.textContent).toContain("Current fix");
     expect(container.classList.contains("is-warning")).toBe(false);
     expect(container.classList.contains("is-stale")).toBe(false);

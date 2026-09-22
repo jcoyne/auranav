@@ -81,12 +81,12 @@ export function formatRange(nauticalMiles: number): string {
 
 /**
  * Bearing for display, as three digits with the customary leading zeros, so
- * `009° T` cannot be misread. 359.6° rounds to 360, which is written `000° T`.
+ * `009` cannot be misread. 359.6° rounds to 360, which is written `000°`.
  */
 export function formatBearing(degrees: number): string {
-  if (!Number.isFinite(degrees)) return "—° T";
+  if (!Number.isFinite(degrees)) return "—°";
   const rounded = Math.round(normaliseDegrees(degrees)) % 360;
-  return `${String(rounded).padStart(3, "0")}° T`;
+  return `${String(rounded).padStart(3, "0")}°`;
 }
 
 /** A position in the decimal-degree form the rest of the app displays. */

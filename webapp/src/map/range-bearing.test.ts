@@ -87,10 +87,10 @@ describe("range and bearing", () => {
   });
 
   it("writes a bearing as three digits labelled true", () => {
-    expect(formatBearing(0)).toBe("000° T");
-    expect(formatBearing(9.4)).toBe("009° T");
-    expect(formatBearing(182.164915)).toBe("182° T");
-    expect(formatBearing(359.6)).toBe("000° T");
-    expect(formatBearing(Number.NaN)).toBe("—° T");
+    expect(formatBearing(0)).toBe("000°");
+    expect(formatBearing(9.4)).toBe("009°");
+    expect(formatBearing(182.164915)).toBe("182°");
+    expect(formatBearing(359.6)).toBe("000°");
+    expect(formatBearing(Number.NaN)).toBe("—°");
   });
 });
