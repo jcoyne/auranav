@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { injectShellBuild, shellPrecacheUrls } from "./src/offline/shell-precache";
 
 const repoDataDir = fileURLToPath(new URL("../data/", import.meta.url));
 
@@ -55,15 +56,18 @@ function versionServiceWorker(): Plugin {
       const hash = createHash("sha256");
       // Hash after the public directory has been copied, so unhashed files such as the
       // glyph ranges and icons also invalidate the cache when they change.
-      for (const file of (await readdir(outDir, { recursive: true, withFileTypes: true }))
+      const files = (await readdir(outDir, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
         .map((entry) => path.relative(outDir, path.join(entry.parentPath, entry.name)))
         .filter((file) => file !== "service-worker.js")
-        .sort()) {
+        .sort();
+      for (const file of files) {
         hash.update(file);
         hash.update(await readFile(path.join(outDir, file)));
       }
-      await writeFile(workerPath, source.replaceAll("__BUILD_ID__", hash.digest("hex").slice(0, 16)));
+      // The same listing is the worker's precache list, so every chunk the shell loads at
+      // runtime is stored on install and not only those index.html names.
+      await writeFile(workerPath, injectShellBuild(source, hash.digest("hex").slice(0, 16), shellPrecacheUrls(files)));
     },
   };
 }

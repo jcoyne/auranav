@@ -4,6 +4,11 @@
 const SHELL_CACHE = "chartplotter-shell-__BUILD_ID__";
 const BASE = new URL("./", self.registration.scope);
 const STATIC_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./app-icon-192.png", "./app-icon-512.png", "./fonts/Noto%20Sans%20Regular/0-255.pbf", "./fonts/OFL.txt", "./fonts/README.txt"];
+// The build replaces this with every file it emitted (see src/offline/shell-precache.ts).
+// index.html names only the entry chunk and stylesheet; the MapLibre worker is referenced
+// from JavaScript, so without this list it was never stored and an offline cold start
+// could not draw the downloaded charts.
+const BUILD_ASSETS = /* __PRECACHE_URLS__ */ [];
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
@@ -16,7 +21,7 @@ self.addEventListener("install", (event) => {
       .map((match) => match[1])
       .filter((path) => path && !path.startsWith("data:"))
       .map((path) => new URL(path, BASE));
-    const uniqueAssets = new Map([...STATIC_ASSETS.slice(2).map((path) => new URL(path, BASE)), ...assets]
+    const uniqueAssets = new Map([...[...STATIC_ASSETS.slice(2), ...BUILD_ASSETS].map((path) => new URL(path, BASE)), ...assets]
       .map((url) => [url.href, url]));
     await cache.addAll([...uniqueAssets.values()]);
     await self.skipWaiting();
